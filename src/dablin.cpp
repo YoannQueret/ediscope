@@ -291,6 +291,12 @@ void DABlinText::EnsembleUpdateProgress(const ENSEMBLE_PROGRESS& progress) {
 	fprintf(stderr, format.c_str(), progress.text.c_str());
 }
 
+void DABlinText::EnsembleEDITiming(const EDI_TIMING& timing) {
+	if(timing.valid)
+		fprintf(stderr, "EDIPlayer: buffer delay %.0f ms, margin %.0f ms, TIST@FCT0 %.0f ms\n",
+				timing.buffer_delay_ms, timing.margin_delay_ms, timing.tist_at_fct0_ms);
+}
+
 void DABlinText::FICChangeService(const LISTED_SERVICE& service) {
 //	fprintf(stderr, "### FICChangeService\n");
 

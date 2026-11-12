@@ -57,7 +57,7 @@ private:
 	bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override;
 	bool on_button_press_event(GdkEventButton* event) override;
 	void DrawFrequencyScale(const Cairo::RefPtr<Cairo::Context>& cr, double x, double width, double y);
-	void DrawAmplitudeScale(const Cairo::RefPtr<Cairo::Context>& cr, double baseline_y, double height, bool grow_upward);
+	void DrawAmplitudeScale(const Cairo::RefPtr<Cairo::Context>& cr, double baseline_y, double height, bool grow_upward, double margin_before = 0, double margin_after = 0);
 	void DrawChannel(const Cairo::RefPtr<Cairo::Context>& cr, size_t ch, double x, double width, double baseline_y, double height, bool grow_upward);
 	void DrawChannelBar(const Cairo::RefPtr<Cairo::Context>& cr, size_t ch, double x, double width, double baseline_y, double height, bool grow_upward);
 

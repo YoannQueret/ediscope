@@ -24,6 +24,9 @@
 
 static const int SCALE_WIDTH = 30;
 static const int FREQ_SCALE_HEIGHT = 16;
+// matches FREQ_SCALE_HEIGHT, so there is as much empty space above the plot's top (0dBFS) as below
+// its bottom (the frequency axis) - same margin the level meter uses at its own bottom
+static const int TOP_MARGIN = 16;
 static const int PLOT_MARGIN_RIGHT = 4;
 static const std::chrono::seconds PEAK_HOLD_DURATION{2};
 static const int NUM_BARS = 48;
@@ -131,7 +134,7 @@ double DABlinGTKSpectrum::FreqToFraction(double freq_hz) {
 	return std::log10(f / AudioSpectrumAnalyzer::min_freq) / std::log10(AudioSpectrumAnalyzer::max_freq / AudioSpectrumAnalyzer::min_freq);
 }
 
-void DABlinGTKSpectrum::DrawAmplitudeScale(const Cairo::RefPtr<Cairo::Context>& cr, double baseline_y, double height, bool grow_upward) {
+void DABlinGTKSpectrum::DrawAmplitudeScale(const Cairo::RefPtr<Cairo::Context>& cr, double baseline_y, double height, bool grow_upward, double margin_before, double margin_after) {
 	static const double ticks[] = {0, -6, -12, -20, -40, -60, -90};
 
 	Pango::FontDescription small_font = get_pango_context()->get_font_description();
@@ -160,8 +163,16 @@ void DABlinGTKSpectrum::DrawAmplitudeScale(const Cairo::RefPtr<Cairo::Context>& 
 		int label_width, label_height;
 		label->get_pixel_size(label_width, label_height);
 
-		cr->set_source_rgb(0.4, 0.4, 0.4);
-		cr->move_to(SCALE_WIDTH - 6 - label_width, y - label_height / 2.0);
+		// keep the label within this half's own [top, bottom] extent, widened by margin_before/
+		// margin_after wherever that extent is an outer widget edge with empty space beyond it
+		// (rather than the shared center axis, where another channel's own content begins) - so
+		// e.g. the "0" label can sit centered exactly on its tick instead of being pushed clear of it
+		double extent_top = (grow_upward ? baseline_y - height : baseline_y) - margin_before;
+		double extent_bottom = (grow_upward ? baseline_y : baseline_y + height) + margin_after;
+		double label_y = std::min(std::max(y - label_height / 2.0, extent_top), extent_bottom - label_height);
+
+		cr->set_source_rgb(0.6, 0.6, 0.6);
+		cr->move_to(SCALE_WIDTH - 6 - label_width, label_y);
 		label->show_in_cairo_context(cr);
 	}
 }
@@ -202,6 +213,7 @@ void DABlinGTKSpectrum::DrawFrequencyScale(const Cairo::RefPtr<Cairo::Context>& 
 		else if(tick.freq >= AudioSpectrumAnalyzer::max_freq)
 			label_x = tick_x - label_width;
 
+		cr->set_source_rgb(0.6, 0.6, 0.6);
 		cr->move_to(label_x, y + 5);
 		label->show_in_cairo_context(cr);
 	}
@@ -307,11 +319,17 @@ bool DABlinGTKSpectrum::on_draw(const Cairo::RefPtr<Cairo::Context>& cr) {
 
 	const double plot_x = SCALE_WIDTH;
 	const double plot_width = std::max(0.0, width - SCALE_WIDTH - PLOT_MARGIN_RIGHT);
-	const double plot_height = std::max(0.0, height - FREQ_SCALE_HEIGHT);
+	const double plot_height = std::max(0.0, height - TOP_MARGIN - FREQ_SCALE_HEIGHT);
 
+	// fill the whole widget, not just the plot area, so the frequency/amplitude scale legends sit
+	// on the same dark background as the plot itself, rather than on the widget's default background
 	cr->set_source_rgb(0.08, 0.08, 0.08);
-	cr->rectangle(plot_x, 0, plot_width, plot_height);
-	cr->fill();
+	cr->paint();
+
+	// shifts all plot content (but not the background fill above, or the border below) down by
+	// TOP_MARGIN, so it isn't flush against the widget's top edge
+	cr->save();
+	cr->translate(0, TOP_MARGIN);
 
 	auto draw_channel = [&](size_t ch, double baseline_y, double h, bool grow_upward) {
 		if(display_mode == DisplayMode::Bubble)
@@ -324,8 +342,8 @@ bool DABlinGTKSpectrum::on_draw(const Cairo::RefPtr<Cairo::Context>& cr) {
 	if(channels >= 2) {
 		double half = plot_height / 2.0;
 
-		DrawAmplitudeScale(cr, half, half, true);
-		DrawAmplitudeScale(cr, half, half, false);
+		DrawAmplitudeScale(cr, half, half, true, TOP_MARGIN, 0);
+		DrawAmplitudeScale(cr, half, half, false, 0, FREQ_SCALE_HEIGHT);
 		draw_channel(0, half, half, true);
 		draw_channel(1, half, half, false);
 
@@ -354,16 +372,18 @@ bool DABlinGTKSpectrum::on_draw(const Cairo::RefPtr<Cairo::Context>& cr) {
 		draw_corner_label("L", true);
 		draw_corner_label("R", false);
 	} else {
-		DrawAmplitudeScale(cr, plot_height, plot_height, true);
+		DrawAmplitudeScale(cr, plot_height, plot_height, true, TOP_MARGIN, FREQ_SCALE_HEIGHT);
 		draw_channel(0, plot_height, plot_height, true);
 	}
 
 	DrawFrequencyScale(cr, plot_x, plot_width, plot_height);
 
-	// border around the plot area
+	cr->restore();
+
+	// border around the whole widget, now that its background fills the whole widget too
 	cr->set_source_rgb(0.3, 0.3, 0.3);
 	cr->set_line_width(1);
-	cr->rectangle(plot_x + 0.5, 0.5, plot_width - 1, plot_height - 1);
+	cr->rectangle(0.5, 0.5, width - 1, height - 1);
 	cr->stroke();
 
 	return true;

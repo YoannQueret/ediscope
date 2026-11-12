@@ -83,6 +83,7 @@ private:
 	void EnsembleUpdateProgress(const ENSEMBLE_PROGRESS& progress);
 
 	void EnsembleProcessFIC(const uint8_t *data, size_t len) {fic_decoder->Process(data, len);}
+	void EnsembleEDITiming(const EDI_TIMING& timing);
 
 	void FICChangeService(const LISTED_SERVICE& service);
 	void FICDiscardedFIB();

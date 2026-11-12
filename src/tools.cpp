@@ -18,6 +18,9 @@
 
 #include "tools.h"
 
+#include <set>
+#include <utility>
+
 
 // --- StringTools -----------------------------------------------------------------
 string_vector_t StringTools::SplitString(const std::string &s, const char delimiter) {
@@ -212,8 +215,11 @@ std::string CharsetTools::ConvertTextToUTF8(const uint8_t *data, size_t len, int
 		return std::string((char*) &cleaned_data[0], cleaned_data.size());
 	}
 
-	// ignore unsupported charset
-	fprintf(stderr, "CharsetTools: The %s charset %d is not supported; ignoring!\n", mot ? "MOT" : "DAB", charset);
+	// ignore unsupported charset; warn only once per distinct (DAB/MOT, charset) combination, as
+	// the same label is repeatedly re-converted (e.g. on every services table redraw)
+	static std::set<std::pair<bool, int>> warned_charsets;
+	if(warned_charsets.insert(std::make_pair(mot, charset)).second)
+		fprintf(stderr, "CharsetTools: The %s charset %d is not supported; ignoring!\n", mot ? "MOT" : "DAB", charset);
 	return "";
 }
 

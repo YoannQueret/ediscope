@@ -22,6 +22,7 @@
 #include "edi_network_source.h"
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <sys/stat.h>
 
@@ -125,6 +126,10 @@ static bool DetectLiveSourceBinary(std::string& binary, std::string& type) {
 		}
 	}
 
+	if(FindInPath("eti-cmdline-rtlsdr", binary)) {
+		type = DABLiveETISource::TYPE_ETI_CMDLINE;
+		return true;
+	}
 	if(FindInPath("eti-cmdline", binary)) {
 		type = DABLiveETISource::TYPE_ETI_CMDLINE;
 		return true;
@@ -380,6 +385,8 @@ DABlinGTK::DABlinGTK(DABlinGTKOptions options) : combo_network_uri(true) {
 	ensemble_change_format.GetDispatcher().connect(sigc::mem_fun(*this, &DABlinGTK::EnsembleChangeFormatEmitted));
 	ensemble_audio_level.GetDispatcher().connect(sigc::mem_fun(*this, &DABlinGTK::EnsembleAudioLevelEmitted));
 	ensemble_audio_spectrum.GetDispatcher().connect(sigc::mem_fun(*this, &DABlinGTK::EnsembleAudioSpectrumEmitted));
+	ensemble_audio_stereo.GetDispatcher().connect(sigc::mem_fun(*this, &DABlinGTK::EnsembleAudioStereoEmitted));
+	ensemble_edi_timing.GetDispatcher().connect(sigc::mem_fun(*this, &DABlinGTK::EnsembleEDITimingEmitted));
 	fic_change_ensemble.GetDispatcher().connect(sigc::mem_fun(*this, &DABlinGTK::FICChangeEnsembleEmitted));
 	fic_change_service.GetDispatcher().connect(sigc::mem_fun(*this, &DABlinGTK::FICChangeServiceEmitted));
 	fic_remove_service.GetDispatcher().connect(sigc::mem_fun(*this, &DABlinGTK::FICRemoveServiceEmitted));
@@ -446,8 +453,17 @@ DABlinGTK::DABlinGTK(DABlinGTKOptions options) : combo_network_uri(true) {
 }
 
 DABlinGTK::~DABlinGTK() {
-	if(ensemble_source) {
+	// signal every worker thread to stop up front, before blocking on any single one of them: by
+	// this point (app->run() has returned) the GTK main loop is gone for good, so if one thread's
+	// join below takes a while, any OTHER thread left running unsignaled in the meantime could
+	// still try to report through the observer (audio levels, EDI timing, FIC changes) and block
+	// forever on a notification queue nothing will ever drain again
+	if(ensemble_source)
 		ensemble_source->DoExit();
+	if(ensemble_player)
+		ensemble_player->PrepareStop();
+
+	if(ensemble_source) {
 		ensemble_source_thread.join();
 		delete ensemble_source;
 	}
@@ -836,9 +852,8 @@ void DABlinGTK::InitWidgets() {
 	vlmbtn.set_margin_top(10);
 
 	frame_label_dl.set_label("Dynamic Label");
-	frame_label_dl.set_size_request(750, 50);
+	frame_label_dl.set_size_request(-1, 50);
 	frame_label_dl.set_sensitive(false);
-	frame_label_dl.set_hexpand(true);
 	frame_label_dl.add(label_dl);
 	label_dl.set_halign(Gtk::ALIGN_START);
 	label_dl.set_valign(Gtk::ALIGN_START);
@@ -846,8 +861,30 @@ void DABlinGTK::InitWidgets() {
 	label_dl.set_selectable(true);	// enables text selection + the native right-click "Copy" menu
 
 	frame_dl_plus.set_label("Dynamic Label Plus");
-	frame_dl_plus.set_hexpand(true);
-	frame_dl_plus.add(dl_plus_content);
+	// always show 2 rows' worth of height, even with 0 or 1 actual rows; a 3rd+ DL Plus object
+	// scrolls instead of growing the frame further
+	dl_plus_scroll.set_policy(Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
+	dl_plus_scroll.set_min_content_height(2 * 26 + 26);	// ~26px/row + header
+	dl_plus_scroll.set_max_content_height(2 * 26 + 26);
+	dl_plus_scroll.add(dl_plus_content);
+	frame_dl_plus.add(dl_plus_scroll);
+
+	label_dl_row.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+	label_dl_row.set_spacing(WIDGET_SPACE);	// same gap as between any other two boxes
+	// Dynamic Label is fixed-width (see dl_width_group below); DL Plus takes whatever remains
+	label_dl_row.pack_start(frame_label_dl, false, false);
+	label_dl_row.pack_start(frame_dl_plus, true, true);
+
+	frame_stereo_meter.set_label("Stereo Meter");
+	frame_stereo_meter.add(stereo_meter);
+
+	frame_correlation.set_label("Correlation");
+	frame_correlation.add(correlation_meter);
+
+	stereo_correlation_box.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+	stereo_correlation_box.set_spacing(WIDGET_SPACE);
+	stereo_correlation_box.pack_start(frame_stereo_meter, false, false);
+	stereo_correlation_box.pack_start(frame_correlation, false, false);
 
 	frame_spectrum.set_label("Spectrum");
 	frame_spectrum.add(spectrum);
@@ -858,17 +895,28 @@ void DABlinGTK::InitWidgets() {
 	frame_slideshow.set_label("Slideshow");
 	frame_slideshow.add(slideshow_content);
 
-	dl_plus_slideshow_box.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
-	dl_plus_slideshow_box.set_spacing(WIDGET_SPACE);
-	dl_plus_slideshow_box.pack_start(frame_dl_plus, true, true);
-	dl_plus_slideshow_box.pack_start(frame_spectrum, false, false);
-	dl_plus_slideshow_box.pack_start(frame_level_meter, false, false);
-	dl_plus_slideshow_box.pack_start(frame_slideshow, false, false);
+	// grouped below with Dynamic Label, so its right edge lines up with Spectrum's right edge
+	meters_left_box.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+	meters_left_box.set_spacing(WIDGET_SPACE);
+	meters_left_box.pack_start(stereo_correlation_box, false, false);
+	meters_left_box.pack_start(frame_spectrum, false, false);
+
+	meters_slideshow_box.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+	meters_slideshow_box.set_spacing(WIDGET_SPACE);
+	meters_slideshow_box.pack_start(meters_left_box, false, false);
+	meters_slideshow_box.pack_start(frame_level_meter, false, false);
+	meters_slideshow_box.pack_start(frame_slideshow, false, false);
+
+	// forces Dynamic Label to exactly match the combined width of Stereo Meter + Correlation +
+	// Spectrum, so its right edge lines up with Spectrum's right edge
+	dl_width_group = Gtk::SizeGroup::create(Gtk::SIZE_GROUP_HORIZONTAL);
+	dl_width_group->add_widget(frame_label_dl);
+	dl_width_group->add_widget(meters_left_box);
 
 	lower_controls_box.set_orientation(Gtk::ORIENTATION_VERTICAL);
 	lower_controls_box.set_spacing(WIDGET_SPACE);
-	lower_controls_box.pack_start(frame_label_dl, false, false);
-	lower_controls_box.pack_start(dl_plus_slideshow_box, false, false);
+	lower_controls_box.pack_start(label_dl_row, false, false);
+	lower_controls_box.pack_start(meters_slideshow_box, false, false);
 	// the level meter needs vexpand to fill its own frame, but that must not bubble up into
 	// top_grid's row allocation - otherwise enlarging the window vertically splits the extra
 	// space between "Services details" and this row, instead of only growing the former
@@ -881,6 +929,15 @@ void DABlinGTK::InitWidgets() {
 	label_datetime.set_padding(WIDGET_SPACE, WIDGET_SPACE);
 	// fixed width for "YYYY-MM-DD, Www - HH:MM:SS": 10 + 2 + 3 + 3 + 8 chars, plus a cosmetic margin
 	label_datetime.set_width_chars(10 + 2 + 3 + 3 + 8 + 4);
+
+	frame_label_edi_delay.set_label("Margin delay");
+	frame_label_edi_delay.set_sensitive(false);
+	frame_label_edi_delay.add(label_edi_delay);
+	frame_label_edi_delay.set_has_tooltip(true);
+	frame_label_edi_delay.signal_query_tooltip().connect(sigc::mem_fun(*this, &DABlinGTK::on_edi_delay_query_tooltip));
+	label_edi_delay.set_halign(Gtk::ALIGN_START);
+	label_edi_delay.set_padding(WIDGET_SPACE, WIDGET_SPACE);
+	label_edi_delay.set_width_chars(10);	// "-1234 ms"
 
 	frame_label_asu.set_label("Announcement support");
 	frame_label_asu.set_sensitive(false);
@@ -904,7 +961,8 @@ void DABlinGTK::InitWidgets() {
 	header_grid.attach(frame_source, 0, 0, 1, 2);
 	header_grid.attach_next_to(frame_label_ensemble, frame_source, Gtk::POS_RIGHT, 1, 2);
 	header_grid.attach_next_to(frame_label_datetime, frame_label_ensemble, Gtk::POS_RIGHT, 1, 2);
-	header_grid.attach_next_to(tglbtn_logs, frame_label_datetime, Gtk::POS_RIGHT, 1, 1);
+	header_grid.attach_next_to(frame_label_edi_delay, frame_label_datetime, Gtk::POS_RIGHT, 1, 2);
+	header_grid.attach_next_to(tglbtn_logs, frame_label_edi_delay, Gtk::POS_RIGHT, 1, 1);
 	header_grid.attach_next_to(tglbtn_record, tglbtn_logs, Gtk::POS_RIGHT, 1, 1);
 	header_grid.attach_next_to(label_record, tglbtn_record, Gtk::POS_RIGHT, 3, 1);
 	header_grid.attach_next_to(tglbtn_mute, label_record, Gtk::POS_RIGHT, 1, 1);
@@ -1002,6 +1060,8 @@ void DABlinGTK::SetService(const LISTED_SERVICE& service) {
 		dl_plus_content.ClearDLPlusInfo();
 		level_meter.Reset();
 		spectrum.Reset();
+		stereo_meter.Reset();
+		correlation_meter.Reset();
 
 		if(!service.HasSLS())
 			slideshow_content.ClearSlide();
@@ -1509,6 +1569,35 @@ void DABlinGTK::EnsembleAudioSpectrumEmitted() {
 	spectrum.SetSpectrum(ensemble_audio_spectrum.Pop());
 }
 
+void DABlinGTK::EnsembleAudioStereoEmitted() {
+	AUDIO_STEREO_FRAME stereo = ensemble_audio_stereo.Pop();
+	stereo_meter.AddPoints(stereo.points);
+	if(stereo.valid)
+		correlation_meter.SetCorrelation(stereo.correlation);
+}
+
+void DABlinGTK::EnsembleEDITimingEmitted() {
+	EDI_TIMING timing = ensemble_edi_timing.Pop();
+
+	if(timing.valid) {
+		frame_label_edi_delay.set_sensitive(true);
+		label_edi_delay.set_label(std::to_string((int) std::lround(timing.margin_delay_ms)) + " ms");
+	} else {
+		frame_label_edi_delay.set_sensitive(false);
+		label_edi_delay.set_label("");
+	}
+	edi_timing_valid = timing.valid;
+	edi_timing_tist_at_fct0_ms = timing.tist_at_fct0_ms;
+}
+
+bool DABlinGTK::on_edi_delay_query_tooltip(int /*x*/, int /*y*/, bool keyboard_tooltip, const Glib::RefPtr<Gtk::Tooltip>& tooltip) {
+	if(keyboard_tooltip || !edi_timing_valid)
+		return false;
+
+	tooltip->set_text("TIST@FCT0: " + std::to_string((int) std::lround(edi_timing_tist_at_fct0_ms)) + " ms");
+	return true;
+}
+
 void DABlinGTK::FICChangeEnsemble(const FIC_ENSEMBLE& ensemble) {
 	fic_change_ensemble.PushAndEmit(ensemble);
 
@@ -1761,6 +1850,10 @@ void DABlinGTK::StopEnsembleSource() {
 	frame_label_datetime.set_sensitive(false);
 	frame_label_datetime.set_tooltip_text("");
 	label_datetime.set_label("");
+
+	frame_label_edi_delay.set_sensitive(false);
+	label_edi_delay.set_label("");
+	edi_timing_valid = false;
 
 	utc_dt_curr = FIC_DAB_DT();
 	dt_lto = FIC_ENSEMBLE::lto_none;

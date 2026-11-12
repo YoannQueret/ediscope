@@ -172,6 +172,10 @@ if(DABLIN_BUNDLE_ETI_CMDLINE)
     if(LIBRTLSDR_FOUND)
         set(DABLIN_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/src)
         add_subdirectory(contrib/eti-cmdline)
+        # install next to dablin_gtk, so DABlinGTK's own DAB live source auto-detection (which
+        # looks for it right beside the running executable) also works for an installed copy,
+        # not just when run straight out of the build directory
+        install(TARGETS eti-cmdline-rtlsdr DESTINATION bin)
     else()
         message(STATUS "librtlsdr not found, skipping bundled eti-cmdline (live SDR reception won't be available)")
     endif()

@@ -26,6 +26,11 @@ static const int BAR_GAP = 3;
 static const int MAX_CHANNELS = 2;	// DAB audio is mono or stereo at most
 static const int BARS_AREA_WIDTH = MAX_CHANNELS * BAR_WIDTH + (MAX_CHANNELS - 1) * BAR_GAP;
 static const std::chrono::seconds PEAK_HOLD_DURATION{2};
+// matches the spectrum's FREQ_SCALE_HEIGHT, so the bottom of this scale (-60) lines up with the
+// bottom of the spectrum's scale (0dBFS), even though this meter has no frequency axis of its own
+static const int BOTTOM_MARGIN = 16;
+// same margin, mirrored at the top, so the 0dBFS mark isn't flush against the widget's top edge
+static const int TOP_MARGIN = 16;
 
 
 // --- DABlinGTKLevelMeter -----------------------------------------------------------------
@@ -137,7 +142,17 @@ void DABlinGTKLevelMeter::DrawBar(const Cairo::RefPtr<Cairo::Context>& cr, doubl
 
 bool DABlinGTKLevelMeter::on_draw(const Cairo::RefPtr<Cairo::Context>& cr) {
 	Gtk::Allocation allocation = get_allocation();
-	const double height = allocation.get_height();
+	const double height = std::max(0.0, (double) allocation.get_height() - TOP_MARGIN - BOTTOM_MARGIN);
+
+	// fill the whole widget, not just the bars, so the dB scale legend sits on the same dark
+	// background as the bars themselves, rather than on the widget's default background
+	cr->set_source_rgb(0.08, 0.08, 0.08);
+	cr->paint();
+
+	// shifts all plot content (but not the background fill above) down by TOP_MARGIN, so it isn't
+	// flush against the widget's top edge
+	cr->save();
+	cr->translate(0, TOP_MARGIN);
 
 	auto y_from_top = [&](double d) {return height - height * LevelToFraction(d);};
 
@@ -163,7 +178,7 @@ bool DABlinGTKLevelMeter::on_draw(const Cairo::RefPtr<Cairo::Context>& cr) {
 		int label_width, label_height;
 		label->get_pixel_size(label_width, label_height);
 
-		cr->set_source_rgb(0.4, 0.4, 0.4);
+		cr->set_source_rgb(0.6, 0.6, 0.6);
 		cr->move_to(SCALE_WIDTH - 6 - label_width, std::min(std::max(y - label_height / 2.0, 0.0), height - label_height));
 		label->show_in_cairo_context(cr);
 	}
@@ -176,6 +191,8 @@ bool DABlinGTKLevelMeter::on_draw(const Cairo::RefPtr<Cairo::Context>& cr) {
 		double x = SCALE_WIDTH + ch * (bar_width + BAR_GAP);
 		DrawBar(cr, x, bar_width, height, levels_dbfs[ch], peak_dbfs[ch]);
 	}
+
+	cr->restore();
 
 	return true;
 }

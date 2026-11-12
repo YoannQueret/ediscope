@@ -1039,6 +1039,11 @@ void FICDecoder::UpdateEnsemble() {
 }
 
 std::string FICDecoder::ConvertLabelToUTF8(const FIC_LABEL& label, std::string* charset_name) {
+	// no label received yet (e.g. a service just discovered via FIG 0/2, whose FIG 1/0 label
+	// hasn't arrived yet) - nothing to convert, and certainly not an actual unsupported charset
+	if(label.IsNone())
+		return "";
+
 	std::string result = CharsetTools::ConvertTextToUTF8(label.label, sizeof(label.label), label.charset, false, charset_name);
 
 	// discard trailing spaces

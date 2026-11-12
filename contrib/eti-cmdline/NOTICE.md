@@ -27,8 +27,12 @@ build or install eti-cmdline.
   KISS FFT under `src/support/fft/`, not FFTW; nothing in this trimmed source
   tree calls into libsamplerate) - these were leftover requirements from
   upstream's shared CMakeLists template across its sibling device backends.
-  The `install`/`uninstall` targets were also removed, since the resulting
-  `eti-cmdline-rtlsdr` binary is only ever used in place, next to `dablin_gtk`.
+  The `install`/`uninstall` targets were also removed - upstream's version
+  installs to its own standard locations (bin, man page, etc.), none of which
+  apply here. Instead, dablin's own root `CMakeLists.txt` installs just the
+  resulting `eti-cmdline-rtlsdr` binary to the same `bin` directory as
+  `dablin_gtk`, since DABlinGTK's DAB live source auto-detection looks for it
+  right next to its own executable.
 - The Viterbi decoder is built using the portable `spiral-no-sse.c` variant
   only (no `-DX64_DEFINED`/SSE or `-DRPI_DEFINED`/NEON-specific builds).
 - Fixed a crash in `devices/rtlsdr-handler/rtlsdr-handler.cpp`: the device

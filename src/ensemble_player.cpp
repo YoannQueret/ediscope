@@ -33,6 +33,7 @@ EnsemblePlayer::EnsemblePlayer(AudioOutputType audio_output_type, bool disable_i
 	out = nullptr;
 	audio_channels = 1;
 	audio_samplerate = 0;
+	has_edi_timing = false;
 
 	switch(audio_output_type) {
 #ifndef DABLIN_DISABLE_SDL
@@ -100,8 +101,13 @@ void EnsemblePlayer::ProcessFrame(const uint8_t *data) {
 	bool init = next_frame_time.time_since_epoch().count() == 0;
 	std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
 
-	// flow control
-	if(init || (disable_int_catch_up && now > next_frame_time + std::chrono::milliseconds(24))) {
+	if(has_edi_timing) {
+		// EDIPlayer paces itself precisely against each frame's own embedded timestamp, on its own
+		// dedicated playback thread, fully decoupled from this call (which is on the reader thread
+		// and must never block, so as to keep timestamping new frames against their true network
+		// arrival time) - so this relative, fixed 24ms-per-frame clock must just stand aside
+		next_frame_time = now;
+	} else if(init || (disable_int_catch_up && now > next_frame_time + std::chrono::milliseconds(24))) {
 		// resync, if desired and noticeable after expected arrival of next frame
 		if(!init)
 			fprintf(stderr, "EnsemblePlayer: resynced to stream\n");
@@ -113,6 +119,30 @@ void EnsemblePlayer::ProcessFrame(const uint8_t *data) {
 	next_frame_time += std::chrono::milliseconds(24);
 
 	DecodeFrame(data);
+}
+
+bool EnsemblePlayer::EDITimingShouldNotify() {
+	static const std::chrono::milliseconds min_interval(250);
+	std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+
+	std::lock_guard<std::mutex> lock(edi_timing_notify_mutex);
+	if(edi_timing_last_notify.time_since_epoch().count() != 0 && now - edi_timing_last_notify < min_interval)
+		return false;
+
+	edi_timing_last_notify = now;
+	return true;
+}
+
+void EnsemblePlayer::ReportEDITiming(const EDI_TIMING& timing) {
+	has_edi_timing = timing.valid;
+
+	if(observer && EDITimingShouldNotify())
+		observer->EnsembleEDITiming(timing);
+}
+
+void EnsemblePlayer::ReportEDIPlayback(const EDI_TIMING& timing) {
+	if(observer && EDITimingShouldNotify())
+		observer->EnsembleEDITiming(timing);
 }
 
 void EnsemblePlayer::StartAudio(int samplerate, int channels) {
@@ -157,6 +187,35 @@ void EnsemblePlayer::PutAudio(const uint8_t *data, size_t len) {
 		if(!spectrum.channels_db.empty() && !spectrum.channels_db[0].empty()) {
 			spectrum.samplerate = audio_samplerate;
 			observer->EnsembleAudioSpectrum(spectrum);
+		}
+
+		// derive the L/R phase correlation and a decimated, rotated sample cloud for the goniometer;
+		// stereo imaging only makes sense for actual stereo audio
+		if(channels == 2) {
+			size_t num_frames = num_samples / 2;
+
+			AUDIO_STEREO_FRAME stereo;
+			static const size_t target_points = 100;
+			size_t stride = std::max((size_t) 1, num_frames / target_points);
+
+			double sum_lr = 0.0, sum_l2 = 0.0, sum_r2 = 0.0;
+			for(size_t i = 0; i < num_frames; i++) {
+				double l = samples[i * 2] / 32768.0;
+				double r = samples[i * 2 + 1] / 32768.0;
+				sum_lr += l * r;
+				sum_l2 += l * l;
+				sum_r2 += r * r;
+
+				if(i % stride == 0)
+					stereo.points.emplace_back((float) ((r - l) / std::sqrt(2.0)), (float) ((l + r) / std::sqrt(2.0)));
+			}
+
+			if(sum_l2 > 0.0 && sum_r2 > 0.0) {
+				stereo.correlation = sum_lr / std::sqrt(sum_l2 * sum_r2);
+				stereo.valid = true;
+			}
+
+			observer->EnsembleAudioStereo(stereo);
 		}
 	}
 }

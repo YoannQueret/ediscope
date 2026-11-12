@@ -34,6 +34,8 @@ set(dablin_gtk_sources
     dablin_gtk_logs.cpp
     dablin_gtk_level_meter.cpp
     dablin_gtk_spectrum.cpp
+    dablin_gtk_stereometer.cpp
+    dablin_gtk_correlation.cpp
     ecc_countries.cpp
     edi_network_source.cpp
     edi_pft.cpp

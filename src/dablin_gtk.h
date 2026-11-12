@@ -39,6 +39,8 @@
 #include "dablin_gtk_logs.h"
 #include "dablin_gtk_level_meter.h"
 #include "dablin_gtk_spectrum.h"
+#include "dablin_gtk_stereometer.h"
+#include "dablin_gtk_correlation.h"
 #include "eti_source.h"
 #include "edi_source.h"
 #include "edi_player.h"
@@ -228,6 +230,20 @@ private:
 	void EnsembleAudioSpectrum(const AUDIO_SPECTRUM& spectrum) {ensemble_audio_spectrum.PushAndEmit(spectrum);}
 	void EnsembleAudioSpectrumEmitted();
 
+	GTKDispatcherQueue<AUDIO_STEREO_FRAME> ensemble_audio_stereo;
+	void EnsembleAudioStereo(const AUDIO_STEREO_FRAME& stereo) {ensemble_audio_stereo.PushAndEmit(stereo);}
+	void EnsembleAudioStereoEmitted();
+
+	GTKDispatcherQueue<EDI_TIMING> ensemble_edi_timing;
+	void EnsembleEDITiming(const EDI_TIMING& timing) {ensemble_edi_timing.PushAndEmit(timing);}
+	void EnsembleEDITimingEmitted();
+	// read by on_edi_delay_query_tooltip - updated several times per second while connected, so
+	// the tooltip text is fetched on demand (query-tooltip), rather than pushed via
+	// set_tooltip_text() on every update, which was found to disrupt tooltips on OTHER widgets too
+	bool edi_timing_valid = false;
+	double edi_timing_tist_at_fct0_ms = 0.0;
+	bool on_edi_delay_query_tooltip(int x, int y, bool keyboard_tooltip, const Glib::RefPtr<Gtk::Tooltip>& tooltip);
+
 	void EnsembleProcessFIC(const uint8_t *data, size_t len) {fic_decoder->Process(data, len);}
 	void EnsembleResetFIC() {fic_decoder->Reset();}
 	void EnsembleProcessPAD(const uint8_t *xpad_data, size_t xpad_len, bool exact_xpad_len, const uint8_t* fpad_data) {pad_decoder->Process(xpad_data, xpad_len, exact_xpad_len, fpad_data);}
@@ -293,12 +309,23 @@ private:
 	Gtk::ToggleButton tglbtn_mute;
 	Gtk::VolumeButton vlmbtn;
 
+	Gtk::Box label_dl_row;
 	Gtk::Frame frame_label_dl;
 	Gtk::Label label_dl;
-
-	Gtk::Box dl_plus_slideshow_box;
 	Gtk::Frame frame_dl_plus;
+	Gtk::ScrolledWindow dl_plus_scroll;
 	DABlinGTKDLPlusContent dl_plus_content;
+	// keeps Dynamic Label exactly as wide as Stereo Meter + Correlation + Spectrum combined, so its
+	// right edge lines up with Spectrum's right edge
+	Glib::RefPtr<Gtk::SizeGroup> dl_width_group;
+
+	Gtk::Box meters_slideshow_box;
+	Gtk::Box meters_left_box;
+	Gtk::Box stereo_correlation_box;
+	Gtk::Frame frame_stereo_meter;
+	DABlinGTKStereoMeter stereo_meter;
+	Gtk::Frame frame_correlation;
+	DABlinGTKCorrelationMeter correlation_meter;
 	Gtk::Frame frame_spectrum;
 	DABlinGTKSpectrum spectrum;
 	Gtk::Frame frame_level_meter;
@@ -308,6 +335,9 @@ private:
 
 	Gtk::Frame frame_label_datetime;
 	Gtk::Label label_datetime;
+
+	Gtk::Frame frame_label_edi_delay;
+	Gtk::Label label_edi_delay;
 
 	Gtk::Frame frame_label_asu;
 	Gtk::Label label_asu;
