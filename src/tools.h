@@ -163,10 +163,6 @@ public:
 };
 
 
-typedef std::map<std::string,uint32_t> dab_channels_t;
-extern const dab_channels_t dab_channels;
-
-
 struct AUDIO_SERVICE {
 	int subchid;
 	bool dab_plus;

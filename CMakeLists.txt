@@ -3,7 +3,7 @@
 ########################################################################
 
 cmake_minimum_required(VERSION 3.10)
-project(dablin C CXX)
+project(ediscope C CXX)
 
 # Select the release build type by default to get optimization flags
 if(NOT CMAKE_BUILD_TYPE)
@@ -54,8 +54,8 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_COMPILER_IS_CLANGXX)
-    # C++11 - CXX-only, so it doesn't leak onto C sources (e.g. the bundled eti-cmdline's C files)
-    # pulled in by a later add_subdirectory() and trigger "valid for C++/ObjC++ but not for C"
+    # C++11 - CXX-only, so it doesn't leak onto the bundled fec library's plain C sources and
+    # trigger "valid for C++/ObjC++ but not for C"
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-std=c++0x>)
 
     # warnings
@@ -98,7 +98,7 @@ if(NOT DISABLE_SDL)
     pkg_check_modules(SDL2 sdl2 REQUIRED)
 	include_directories(${SDL2_INCLUDE_DIRS})
 	link_directories(${SDL2_LIBRARY_DIRS})
-	list(APPEND dablin_sources sdl_output.cpp)
+	list(APPEND ediscope_sources sdl_output.cpp)
 else()
     add_definitions(-DDABLIN_DISABLE_SDL)
 endif()
@@ -120,7 +120,7 @@ if(USE_FDK-AAC)
     pkg_check_modules(FDKAAC fdk-aac)
     pkg_check_modules(FDKAAC-DABPLUS fdk-aac-dabplus)
     if(NOT(FDKAAC_FOUND OR FDKAAC-DABPLUS_FOUND))
-        message(FATAL_ERROR "fdk-aac or fdk-aac-dabplus required to compile dablin with USE_FDK-AAC\n")
+        message(FATAL_ERROR "fdk-aac or fdk-aac-dabplus required to compile EDIScope with USE_FDK-AAC\n")
     endif()
     if(FDKAAC-DABPLUS_FOUND)
         include_directories(${FDKAAC-DABPLUS_INCLUDE_DIRS})
@@ -160,33 +160,16 @@ if(NOT NATIVE_ATOMICS_SUPPORT)
 endif()
 
 ########################################################################
-# Bundled DAB live source (vendored eti-cmdline, RTL-SDR only - see
-# contrib/eti-cmdline/NOTICE.md). Built alongside dablin_gtk so live SDR
-# reception works without a separately installed eti-cmdline/dab2eti binary.
-########################################################################
-
-option(DABLIN_BUNDLE_ETI_CMDLINE "Build the vendored eti-cmdline (RTL-SDR live source)" ON)
-
-if(DABLIN_BUNDLE_ETI_CMDLINE)
-    pkg_check_modules(LIBRTLSDR librtlsdr)
-    if(LIBRTLSDR_FOUND)
-        set(DABLIN_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/src)
-        add_subdirectory(contrib/eti-cmdline)
-        # install next to dablin_gtk, so DABlinGTK's own DAB live source auto-detection (which
-        # looks for it right beside the running executable) also works for an installed copy,
-        # not just when run straight out of the build directory
-        install(TARGETS eti-cmdline-rtlsdr DESTINATION bin)
-    else()
-        message(STATUS "librtlsdr not found, skipping bundled eti-cmdline (live SDR reception won't be available)")
-    endif()
-endif()
-
-########################################################################
-# Setup DABlin application build
+# Setup EDIScope application build
 ########################################################################
 
 add_subdirectory(src)
 add_subdirectory(doc)
+
+if(GTKMM_FOUND)
+    install(FILES res/ediscope-icon.png DESTINATION share/icons/hicolor/256x256/apps RENAME ediscope.png)
+    install(FILES res/ediscope-gtk.desktop DESTINATION share/applications)
+endif()
 
 ########################################################################
 # Print Summary
@@ -196,7 +179,7 @@ message(STATUS "##########################################################")
 message(STATUS "## Building version: ${VERSION_OUTPUT}")
 message(STATUS "## Using install prefix: ${CMAKE_INSTALL_PREFIX}")
 if(NOT GTKMM_FOUND)
-    message(STATUS "## gtkmm not found, thus do not build dablin_gtk")
+    message(STATUS "## gtkmm not found, thus do not build ediscope_gtk")
 endif()
 message(STATUS "##########################################################")
 message(STATUS "")

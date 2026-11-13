@@ -2,13 +2,12 @@
 # Setup apps
 ########################################################################
 
-list(APPEND dablin_sources
+list(APPEND ediscope_sources
     dabplus_decoder.cpp
     ensemble_source.cpp
     ensemble_player.cpp
     edi_source.cpp
     edi_player.cpp
-    eti_source.cpp
     eti_player.cpp
     dab_decoder.cpp
     fic_decoder.cpp
@@ -20,22 +19,22 @@ list(APPEND dablin_sources
     audio_spectrum_analyzer.cpp
     )
 
-set(dablin_cli_sources
-    dablin.cpp
+set(ediscope_cli_sources
+    ediscope.cpp
     )
 
-set(dablin_gtk_sources
+set(ediscope_gtk_sources
     mot_manager.cpp
     pad_decoder.cpp
-    dablin_gtk.cpp
-    dablin_gtk_dl_plus.cpp
-    dablin_gtk_sls.cpp
-    dablin_gtk_cu_bar.cpp
-    dablin_gtk_logs.cpp
-    dablin_gtk_level_meter.cpp
-    dablin_gtk_spectrum.cpp
-    dablin_gtk_stereometer.cpp
-    dablin_gtk_correlation.cpp
+    ediscope_gtk.cpp
+    ediscope_gtk_dl_plus.cpp
+    ediscope_gtk_sls.cpp
+    ediscope_gtk_cu_bar.cpp
+    ediscope_gtk_logs.cpp
+    ediscope_gtk_level_meter.cpp
+    ediscope_gtk_spectrum.cpp
+    ediscope_gtk_stereometer.cpp
+    ediscope_gtk_correlation.cpp
     ecc_countries.cpp
     edi_network_source.cpp
     edi_pft.cpp
@@ -53,14 +52,14 @@ include_directories(../fec)
 # Build the applications and add install rules.
 ########################################################################
 
-# dablin
-add_executable(dablin ${dablin_sources} ${dablin_cli_sources})
-target_link_libraries(dablin ${common_link_list})
-install(TARGETS dablin DESTINATION bin)
+# ediscope
+add_executable(ediscope ${ediscope_sources} ${ediscope_cli_sources})
+target_link_libraries(ediscope ${common_link_list})
+install(TARGETS ediscope DESTINATION bin)
 
-# dablin_gtk
+# ediscope_gtk
 if(GTKMM_FOUND)
-    add_executable(dablin_gtk ${dablin_sources} ${dablin_gtk_sources})
-    target_link_libraries(dablin_gtk ${common_link_list} ${GTKMM_LIBRARIES})
-    install(TARGETS dablin_gtk DESTINATION bin)
+    add_executable(ediscope_gtk ${ediscope_sources} ${ediscope_gtk_sources})
+    target_link_libraries(ediscope_gtk ${common_link_list} ${GTKMM_LIBRARIES})
+    install(TARGETS ediscope_gtk DESTINATION bin)
 endif()

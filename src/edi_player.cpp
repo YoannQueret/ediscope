@@ -38,6 +38,8 @@ EDIPlayer::~EDIPlayer() {
 }
 
 void EDIPlayer::PrepareStop() {
+	EnsemblePlayer::PrepareStop();
+
 	std::lock_guard<std::mutex> lock(queue_mutex);
 	do_exit = true;
 	queue_cv.notify_one();
@@ -209,7 +211,7 @@ void EDIPlayer::PlaybackThreadMain() {
 		}
 
 		if(frame.has_time) {
-			// convert the (system_clock) target into the steady_clock domain sleep_until() needs,
+			// convert the (system_clock) target into the steady_clock domain the wait below needs,
 			// by carrying over the offset between two "now"s sampled an instant apart - a wall-
 			// clock step (e.g. NTP) in between would skew this by that same step, self-correcting
 			// again on the very next frame
@@ -217,7 +219,16 @@ void EDIPlayer::PlaybackThreadMain() {
 			std::chrono::steady_clock::time_point steady_now = std::chrono::steady_clock::now();
 			std::chrono::steady_clock::time_point target = steady_now +
 					std::chrono::duration_cast<std::chrono::steady_clock::duration>(frame.frame_time - sys_now);
-			std::this_thread::sleep_until(target);
+
+			// wait_until() rather than a bare sleep_until(), so a shutdown request (do_exit,
+			// signaled through the same condition variable by PrepareStop()) wakes this up
+			// immediately instead of only after the full wait - which, right after connecting to
+			// a mux with a multi-second tist_offset, can be as long as that offset itself for the
+			// very first frame
+			std::unique_lock<std::mutex> lock(queue_mutex);
+			queue_cv.wait_until(lock, target, [this]{return do_exit;});
+			if(do_exit)
+				return;
 		}
 
 		PlaybackFrame(&frame.data[0]);

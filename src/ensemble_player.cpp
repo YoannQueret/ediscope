@@ -34,6 +34,7 @@ EnsemblePlayer::EnsemblePlayer(AudioOutputType audio_output_type, bool disable_i
 	audio_channels = 1;
 	audio_samplerate = 0;
 	has_edi_timing = false;
+	reporting_enabled = true;
 
 	switch(audio_output_type) {
 #ifndef DABLIN_DISABLE_SDL
@@ -136,12 +137,12 @@ bool EnsemblePlayer::EDITimingShouldNotify() {
 void EnsemblePlayer::ReportEDITiming(const EDI_TIMING& timing) {
 	has_edi_timing = timing.valid;
 
-	if(observer && EDITimingShouldNotify())
+	if(reporting_enabled && observer && EDITimingShouldNotify())
 		observer->EnsembleEDITiming(timing);
 }
 
 void EnsemblePlayer::ReportEDIPlayback(const EDI_TIMING& timing) {
-	if(observer && EDITimingShouldNotify())
+	if(reporting_enabled && observer && EDITimingShouldNotify())
 		observer->EnsembleEDITiming(timing);
 }
 
@@ -158,7 +159,7 @@ void EnsemblePlayer::PutAudio(const uint8_t *data, size_t len) {
 		out->PutAudio(data, len);
 
 	// derive a per-channel dBFS peak level from the signed 16bit interleaved PCM samples, for the level meter
-	if(observer) {
+	if(reporting_enabled && observer) {
 		const int16_t *samples = (const int16_t*) data;
 		size_t num_samples = len / sizeof(int16_t);
 		int channels = audio_channels > 0 ? audio_channels : 1;
@@ -222,19 +223,19 @@ void EnsemblePlayer::PutAudio(const uint8_t *data, size_t len) {
 
 void EnsemblePlayer::FormatChange(const AUDIO_SERVICE_FORMAT& format) {
 	fprintf(stderr, "EnsemblePlayer: format: %s\n", format.GetSummary().c_str());
-	if(observer)
+	if(reporting_enabled && observer)
 		observer->EnsembleChangeFormat(format);
 }
 
 void EnsemblePlayer::ProcessFIC(const uint8_t *data, size_t len) {
 //	fprintf(stderr, "Received %zu bytes FIC\n", len);
-	if(observer)
+	if(reporting_enabled && observer)
 		observer->EnsembleProcessFIC(data, len);
 }
 
 void EnsemblePlayer::ProcessPAD(const uint8_t *xpad_data, size_t xpad_len, bool exact_xpad_len, const uint8_t *fpad_data) {
 //	fprintf(stderr, "Received %zu bytes X-PAD\n", xpad_len);
-	if(observer)
+	if(reporting_enabled && observer)
 		observer->EnsembleProcessPAD(xpad_data, xpad_len, exact_xpad_len, fpad_data);
 }
 

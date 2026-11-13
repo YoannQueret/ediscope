@@ -19,8 +19,8 @@
 #include "version.h"
 
 void fprint_dablin_banner(FILE *f) {
-	fprintf(f, "DABlin v%s - capital DAB experience\n", DABLIN_VERSION);
+	fprintf(f, "EDIScope v%s\n", DABLIN_VERSION);
 	fprintf(f, "Plays a DAB/DAB+ audio service from an ETI-NI or an EDI AF stream.\n");
-	fprintf(f, "  https://github.com/Opendigitalradio/dablin\n");
+	fprintf(f, "Based on DABlin (https://github.com/Opendigitalradio/dablin)\n");
 	fprintf(f, "\n");
 }

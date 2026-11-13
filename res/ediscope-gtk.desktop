@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=EDIScope
+Comment=DAB+/EDI diagnostic player
+Exec=ediscope_gtk
+Icon=ediscope
+Terminal=false
+StartupWMClass=Ediscope_gtk
+Categories=AudioVideo;Player;
