@@ -62,4 +62,24 @@ if(GTKMM_FOUND)
     add_executable(ediscope_gtk ${ediscope_sources} ${ediscope_gtk_sources})
     target_link_libraries(ediscope_gtk ${common_link_list} ${GTKMM_LIBRARIES})
     install(TARGETS ediscope_gtk DESTINATION bin)
+
+    # Also register a desktop launcher + icon for the current user right after every build (not
+    # just on "make install"), pointing straight at this build's own output - so the taskbar/dock
+    # icon keeps working without needing sudo, and self-corrects if the checkout is ever moved or
+    # renamed (its paths are only ever baked in fresh, at build time, never hand-maintained).
+    if(UNIX AND NOT APPLE AND NOT CYGWIN)
+        find_program(UPDATE_DESKTOP_DATABASE update-desktop-database)
+        find_program(GTK_UPDATE_ICON_CACHE gtk-update-icon-cache)
+
+        add_custom_command(TARGET ediscope_gtk POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$ENV{HOME}/.local/share/applications"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$ENV{HOME}/.local/share/icons/hicolor/256x256/apps"
+            COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/res/ediscope-icon.png" "$ENV{HOME}/.local/share/icons/hicolor/256x256/apps/ediscope.png"
+            COMMAND bash -c "printf '[Desktop Entry]\\nType=Application\\nName=EDIScope\\nComment=DAB+/EDI diagnostic player\\nExec=%s\\nIcon=%s\\nTerminal=false\\nStartupWMClass=Ediscope_gtk\\nCategories=AudioVideo;Player;\\n' '$<TARGET_FILE:ediscope_gtk>' '${CMAKE_SOURCE_DIR}/res/ediscope-icon.png' > '$ENV{HOME}/.local/share/applications/ediscope-gtk.desktop'"
+            COMMAND bash -c "[ -x '${UPDATE_DESKTOP_DATABASE}' ] && '${UPDATE_DESKTOP_DATABASE}' '$ENV{HOME}/.local/share/applications' || true"
+            COMMAND bash -c "[ -x '${GTK_UPDATE_ICON_CACHE}' ] && '${GTK_UPDATE_ICON_CACHE}' -f '$ENV{HOME}/.local/share/icons/hicolor' 2>/dev/null || true"
+            COMMENT "Registering EDIScope desktop launcher and icon for the current user"
+            VERBATIM
+            )
+    endif()
 endif()

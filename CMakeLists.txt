@@ -169,6 +169,17 @@ add_subdirectory(doc)
 if(GTKMM_FOUND)
     install(FILES res/ediscope-icon.png DESTINATION share/icons/hicolor/256x256/apps RENAME ediscope.png)
     install(FILES res/ediscope-gtk.desktop DESTINATION share/applications)
+
+    # refresh the icon/desktop caches as part of "make install" itself, so a newly installed or
+    # changed icon shows up right away, without a separate manual step after sudo make install
+    find_program(UPDATE_DESKTOP_DATABASE update-desktop-database)
+    find_program(GTK_UPDATE_ICON_CACHE gtk-update-icon-cache)
+    if(UPDATE_DESKTOP_DATABASE)
+        install(CODE "execute_process(COMMAND \"${UPDATE_DESKTOP_DATABASE}\" \"${CMAKE_INSTALL_PREFIX}/share/applications\")")
+    endif()
+    if(GTK_UPDATE_ICON_CACHE)
+        install(CODE "execute_process(COMMAND \"${GTK_UPDATE_ICON_CACHE}\" -f \"${CMAKE_INSTALL_PREFIX}/share/icons/hicolor\")")
+    endif()
 endif()
 
 ########################################################################

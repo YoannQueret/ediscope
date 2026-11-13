@@ -223,23 +223,6 @@ sudo make install
 This produces `src/ediscope` (console) and, if gtkmm was found,
 `src/ediscope_gtk` (GTK GUI).
 
-`sudo make install` also installs EDIScope's icon (to
-`share/icons/hicolor/256x256/apps/ediscope.png`) and a `.desktop` entry
-(to `share/applications/ediscope-gtk.desktop`) under the chosen install
-prefix, so `ediscope_gtk` shows up with its own icon in a desktop
-launcher, taskbar or dock. To make a freshly installed/updated icon
-show up immediately, without logging out first, refresh the icon and
-desktop entry caches once afterwards:
-
-```sh
-sudo gtk-update-icon-cache -f /usr/local/share/icons/hicolor
-sudo update-desktop-database /usr/local/share/applications
-```
-
-(adjust both paths if a different `CMAKE_INSTALL_PREFIX` was used).
-`build.sh` at the repository root already runs the full sequence above
-(configure, build, install, refresh caches) in one go.
-
 
 ### EDI network input
 
