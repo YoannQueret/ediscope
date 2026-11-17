@@ -605,12 +605,24 @@ void EDIScopeGTK::InitWidgets() {
 	services_table.set_has_tooltip(true);
 	services_table.signal_query_tooltip().connect(sigc::mem_fun(*this, &EDIScopeGTK::on_services_table_query_tooltip));
 
-	services_table_scroll.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+	// both policies are ALWAYS, not AUTOMATIC: reserving both scrollbars' space up front means
+	// this area's size never changes as rows/selection change (a scrollbar popping in/out, e.g.
+	// once a row is selected and scrolled into view, otherwise changes how much height is left
+	// for rows, which can cross the threshold for the OTHER scrollbar too) - otherwise, for the
+	// instant before that settles, this area is briefly shorter than its steady-state height, and
+	// the Stereo Meter/Correlation/Spectrum/Level/Slideshow row below picks up that slack
+	services_table_scroll.set_policy(Gtk::POLICY_ALWAYS, Gtk::POLICY_ALWAYS);
 	services_table_scroll.set_vexpand(true);
 	services_table_scroll.add(services_table);
 	// reserve enough room for all columns (unscrolled) and 15 services (scrollable beyond that)
 	services_table_scroll.set_min_content_width(services_table_min_width + 40);	// + scrollbar/border margin
 	services_table_scroll.set_min_content_height(15 * 26 + 30);	// ~26px/row + header
+	// same as min: a secondary-component row can get added to the table at any time, as its FIC
+	// data trickles in - without a matching max, that grows this area's natural height, which (at
+	// a fixed window height) comes straight out of the Stereo Meter/Correlation/Spectrum/Level/
+	// Slideshow row below. More rows than fit just scroll, exactly like fewer rows than fit does
+	services_table_scroll.set_max_content_height(15 * 26 + 30);
+	services_table_scroll.set_propagate_natural_height(false);
 
 	services_table_box.set_orientation(Gtk::ORIENTATION_VERTICAL);
 	services_table_box.pack_start(services_table_scroll, true, true);

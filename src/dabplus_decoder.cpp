@@ -47,12 +47,27 @@ SuperframeFilter::~SuperframeFilter() {
 
 void SuperframeFilter::Feed(const uint8_t *data, size_t len) {
 	// check frame len
-	if(frame_len) {
-		if(frame_len != len) {
-			fprintf(stderr, "SuperframeFilter: different frame len %zu (should be: %zu) - frame ignored!\n", len, frame_len);
-			return;
-		}
-	} else {
+	if(frame_len && frame_len != len) {
+		// the sub-channel's size changed while playing (e.g. a hot bitrate/protection change on
+		// the mux side) - resync from scratch at the new size, rather than silently discarding
+		// every frame forever (which just left the service stuck in permanent silence)
+		fprintf(stderr, "SuperframeFilter: frame len changed (%zu -> %zu) - resyncing Superframe\n", frame_len, len);
+		delete[] sf_raw;
+		delete[] sf;
+		sf_raw = nullptr;
+		sf = nullptr;
+		frame_len = 0;
+		frame_count = 0;
+		sync_frames = 0;
+
+		// force ProcessFormat() to run again once the next Superframe completes, even if the
+		// format byte itself didn't change - this freshly recreates the AAC decoder rather than
+		// feeding it frames with a gap in between, which otherwise left a brief audible artifact
+		// (stale SBR/PNS continuity state) right as audio resumed after the resync
+		sf_format_set = false;
+	}
+
+	if(!frame_len) {
 		if(len < 10) {
 			fprintf(stderr, "SuperframeFilter: frame len %zu too short - frame ignored!\n", len);
 			return;

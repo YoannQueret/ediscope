@@ -103,6 +103,16 @@ EDIScopeGTKSlideshowContent::EDIScopeGTKSlideshowContent() {
 	attach_next_to(history_box, image_event_box, Gtk::POS_RIGHT, 1, 1);
 	attach_next_to(link_button, image_event_box, Gtk::POS_BOTTOM, 1, 1);
 	attach_next_to(progress_file, link_button, Gtk::POS_BOTTOM, 1, 1);
+
+	// both start hidden (shown only once an actual click-through link/file progress exists) -
+	// set_no_show_all() keeps them that way despite the main window's later show_all_children(),
+	// which would otherwise force them visible, inflating this widget's natural height (and, via
+	// the meters row's shared vexpand, Stereo Meter/Correlation/Spectrum/Level's too) until the
+	// first real AwaitSlide()/UpdateSlide() call hides them again for good
+	link_button.set_no_show_all(true);
+	progress_file.set_no_show_all(true);
+	link_button.hide();
+	progress_file.hide();
 }
 
 void EDIScopeGTKSlideshowContent::AwaitSlide() {
