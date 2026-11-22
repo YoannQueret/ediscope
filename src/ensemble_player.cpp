@@ -2,6 +2,9 @@
     DABlin - capital DAB experience
     Copyright (C) 2015-2024 Stefan Pöschel
 
+    EDIScope - DAB+/EDI diagnostic player
+    Copyright (C) 2025-2026 Yoann Queret
+
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
@@ -96,6 +99,16 @@ void EnsemblePlayer::SetAudioService(const AUDIO_SERVICE& audio_service) {
 	}
 
 	this->audio_service = audio_service;
+}
+
+void EnsemblePlayer::AddDataSink(int subchid, SubchannelSink *sink) {
+	std::lock_guard<std::mutex> lock(data_sinks_mutex);
+	data_sinks[subchid] = sink;
+}
+
+void EnsemblePlayer::RemoveDataSink(int subchid) {
+	std::lock_guard<std::mutex> lock(data_sinks_mutex);
+	data_sinks.erase(subchid);
 }
 
 void EnsemblePlayer::ProcessFrame(const uint8_t *data) {

@@ -2,6 +2,9 @@
     DABlin - capital DAB experience
     Copyright (C) 2015-2021 Stefan Pöschel
 
+    EDIScope - DAB+/EDI diagnostic player
+    Copyright (C) 2025-2026 Yoann Queret
+
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
@@ -18,6 +21,8 @@
 
 #include "tools.h"
 
+#include <cctype>
+#include <cstdlib>
 #include <set>
 #include <utility>
 
@@ -96,6 +101,32 @@ std::string StringTools::IntToHex(int value, size_t nibbles) {
 
 std::string StringTools::SidToHex(int sid) {
 	return IntToHex(sid, (unsigned) sid > 0xFFFF ? 8 : 4).substr(2);
+}
+
+std::string StringTools::FilePathFromArg(const std::string &arg) {
+	static const std::string prefix = "file://";
+	if(arg.compare(0, prefix.size(), prefix) != 0)
+		return arg;
+
+	// skip an optional host/authority component (e.g. "file://localhost/path") - for a local
+	// file this is normally empty ("file:///path"), leaving the path's own leading slash as the
+	// very next character already
+	size_t path_start = arg.find('/', prefix.size());
+	std::string path = path_start != std::string::npos ? arg.substr(path_start) : arg.substr(prefix.size());
+
+	// percent-decode (e.g. "%20" -> ' '), as produced by file managers/browsers for paths
+	// containing spaces or other special characters
+	std::string decoded;
+	decoded.reserve(path.size());
+	for(size_t i = 0; i < path.size(); i++) {
+		if(path[i] == '%' && i + 2 < path.size() && isxdigit((unsigned char) path[i + 1]) && isxdigit((unsigned char) path[i + 2])) {
+			decoded += (char) strtol(path.substr(i + 1, 2).c_str(), nullptr, 16);
+			i += 2;
+		} else {
+			decoded += path[i];
+		}
+	}
+	return decoded;
 }
 
 

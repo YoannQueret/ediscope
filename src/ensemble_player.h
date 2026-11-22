@@ -2,6 +2,9 @@
     DABlin - capital DAB experience
     Copyright (C) 2015-2024 Stefan Pöschel
 
+    EDIScope - DAB+/EDI diagnostic player
+    Copyright (C) 2025-2026 Yoann Queret
+
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
@@ -28,6 +31,7 @@
 #include <stdint.h>
 #include <atomic>
 #include <chrono>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -123,6 +127,15 @@ protected:
 	AUDIO_SERVICE audio_service;
 
 	SubchannelSink *dec;
+
+	// additional, independent per-sub-channel sinks fed every frame regardless of the (single)
+	// selected audio_service above - e.g. the SPI packet-mode demultiplexer for a data
+	// sub-channel, which must keep receiving bytes no matter what the user is listening to.
+	// Sinks are owned by the caller, not by EnsemblePlayer: Add/RemoveDataSink only register a
+	// pointer to feed, matching SubchannelSink's existing non-owning use for dec via SetAudioService
+	std::mutex data_sinks_mutex;
+	std::map<int,SubchannelSink*> data_sinks;
+
 	AudioOutput *out;
 	int audio_channels;
 	int audio_samplerate;
@@ -183,6 +196,12 @@ public:
 
 	bool IsSameAudioService(const AUDIO_SERVICE& audio_service);
 	void SetAudioService(const AUDIO_SERVICE& audio_service);
+
+	// registers/unregisters a sink fed from the given sub-channel every frame, independently of
+	// whatever audio_service is (or isn't) currently selected; sink is not owned, caller must
+	// RemoveDataSink it before destroying it
+	void AddDataSink(int subchid, SubchannelSink *sink);
+	void RemoveDataSink(int subchid);
 
 	std::string GetUntouchedStreamFileExtension() {return dec ? dec->GetUntouchedStreamFileExtension() : "";}
 	void AddUntouchedStreamConsumer(UntouchedStreamConsumer* consumer) {if(dec) dec->AddUntouchedStreamConsumer(consumer);};

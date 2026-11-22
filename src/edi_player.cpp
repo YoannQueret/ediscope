@@ -2,6 +2,9 @@
     DABlin - capital DAB experience
     Copyright (C) 2019 Stefan Pöschel
 
+    EDIScope - DAB+/EDI diagnostic player
+    Copyright (C) 2025-2026 Yoann Queret
+
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
@@ -357,6 +360,16 @@ void EDIPlayer::PlaybackFrame(const uint8_t *edi_frame) {
 			}
 
 			int subchid = tag_value[0] >> 2;
+			const uint8_t *subch_data = tag_value + 3;
+			size_t subch_bytes = (tag_len / 8) - 3;
+
+			// independent data_sinks (e.g. SPI) are fed regardless of the selected audio service
+			{
+				std::lock_guard<std::mutex> data_lock(data_sinks_mutex);
+				std::map<int,SubchannelSink*>::const_iterator sink_it = data_sinks.find(subchid);
+				if(sink_it != data_sinks.end() && sink_it->second)
+					sink_it->second->Feed(subch_data, subch_bytes);
+			}
 
 			// lock only now, as due to the FIC, the audio service may be set
 			std::lock_guard<std::mutex> lock(audio_service_mutex);
@@ -364,7 +377,7 @@ void EDIPlayer::PlaybackFrame(const uint8_t *edi_frame) {
 			if(subchid != audio_service.subchid)
 				continue;
 
-			dec->Feed(tag_value + 3, (tag_len / 8) - 3);
+			dec->Feed(subch_data, subch_bytes);
 
 			continue;
 		}

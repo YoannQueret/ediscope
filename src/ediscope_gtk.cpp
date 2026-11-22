@@ -2,6 +2,9 @@
     DABlin - capital DAB experience
     Copyright (C) 2015-2024 Stefan Pöschel
 
+    EDIScope - DAB+/EDI diagnostic player
+    Copyright (C) 2025-2026 Yoann Queret
+
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
@@ -23,6 +26,7 @@
 #include "edi_network_source.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <fstream>
 #include <sys/stat.h>
@@ -94,7 +98,7 @@ static void usage(const char* exe) {
 					"  -I           Don't catch up on stream after interruption\n"
 					"  -L           Enable loose behaviour (e.g. PAD conformance)\n"
 					"  -F           Disable dynamic FIC messages (dynamic PTY, announcements)\n"
-					"  file         Input file to be played (stdin, if not specified)\n",
+					"  file         Input file to be played (stdin, if not specified) - a file:// URI works too\n",
 					EnsembleSource::FORMAT_ETI.c_str(),
 					EnsembleSource::FORMAT_EDI.c_str(),
 					options_default.recordings_path.c_str(),
@@ -178,7 +182,7 @@ int main(int argc, char **argv) {
 	case 0:
 		break;
 	case 1:
-		options.filename = argv[optind];
+		options.filename = StringTools::FilePathFromArg(argv[optind]);
 		break;
 	default:
 		usage(argv[0]);
@@ -250,6 +254,17 @@ EDIScopeGTK::EDIScopeGTK(EDIScopeGTKOptions options) : combo_network_uri(true) {
 	current_audio_format_subchid = AUDIO_SERVICE::subchid_none;
 
 	logs_window.set_transient_for(*this);
+	logs_window.signal_delete_event().connect([this](GdkEventAny*) -> bool {
+		tglbtn_logs.set_active(false);
+		return true;
+	});
+	spi_window.set_transient_for(*this);
+	// closing it via the window manager (its own close button) just hides it and un-toggles the
+	// "SPI" button, instead of destroying the window - same as toggling that button off
+	spi_window.signal_delete_event().connect([this](GdkEventAny*) -> bool {
+		tglbtn_spi.set_active(false);
+		return true;
+	});
 
 	ensemble_update_progress.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::EnsembleUpdateProgressEmitted));
 	ensemble_change_format.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::EnsembleChangeFormatEmitted));
@@ -264,6 +279,12 @@ EDIScopeGTK::EDIScopeGTK(EDIScopeGTKOptions options) : combo_network_uri(true) {
 	fic_remove_subchannel.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::FICRemoveSubchannelEmitted));
 	fic_change_data_service_sid.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::FICChangeDataServiceSIDEmitted));
 	fic_remove_data_service_sid.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::FICRemoveDataServiceSIDEmitted));
+	fic_change_spi_service.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::FICChangeSPIServiceEmitted));
+	fic_remove_spi_service.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::FICRemoveSPIServiceEmitted));
+	spi_info_updated.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::SPIInfoUpdatedEmitted));
+	spi_logo_updated.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::SPILogoUpdatedEmitted));
+	spi_schedule_updated.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::SPIScheduleUpdatedEmitted));
+	spi_group_info_updated.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::SPIGroupInfoUpdatedEmitted));
 	fic_log_message.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::FICLogMessageEmitted));
 	pad_change_dynamic_label.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::PADChangeDynamicLabelEmitted));
 	pad_change_slide.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::PADChangeSlideEmitted));
@@ -289,8 +310,10 @@ EDIScopeGTK::EDIScopeGTK(EDIScopeGTKOptions options) : combo_network_uri(true) {
 
 	if(options.source_format == EnsembleSource::FORMAT_ETI)
 		ensemble_source = new ETISource(options.filename, this);
-	else
+	else {
 		ensemble_source = new EDISource(options.filename, this);
+		ShowEnsembleWaitingMessage();
+	}
 	ensemble_source_thread = std::thread(&EnsembleSource::Main, ensemble_source);
 
 	fic_decoder = new FICDecoder(this, options.disable_dyn_fic_msgs);
@@ -307,7 +330,6 @@ EDIScopeGTK::EDIScopeGTK(EDIScopeGTKOptions options) : combo_network_uri(true) {
 	add_events(Gdk::KEY_PRESS_MASK);
 
 	// add window config event handler (before default handler)
-	signal_configure_event().connect(sigc::mem_fun(*this, &EDIScopeGTK::HandleConfigureEvent), false);
 	add_events(Gdk::STRUCTURE_MASK);
 }
 
@@ -409,9 +431,31 @@ void EDIScopeGTK::RenderServiceDetailCell(Gtk::CellRenderer* renderer, const Gtk
 				text = FICDecoder::ConvertPTYToString(pty, ensemble.inter_table_id);
 		}
 		break; }
+	case 13:	// S - SPI Service Information present for this SId
+		if(service.sid != LISTED_SERVICE::sid_none) {
+			for(const SPI_SERVICE& spi_service : spi_info.services) {
+				if(spi_service.has_dab_bearer && spi_service.sid == (uint32_t) service.sid) {
+					text = "\xE2\x9C\x93";	// U+2713 CHECK MARK
+					break;
+				}
+			}
+		}
+		break;
+	case 14:	// P - at least one day's SPI Programme Information present for this SId
+		if(service.sid != LISTED_SERVICE::sid_none) {
+			for(const std::pair<const std::pair<uint32_t,std::string>,SPI_SCHEDULE>& kv : spi_schedules) {
+				if(kv.first.first == (uint32_t) service.sid) {
+					text = "\xE2\x9C\x93";
+					break;
+				}
+			}
+		}
+		break;
 	}
 
 	text_renderer->property_text() = text;
+	if(column_id == 13 || column_id == 14)
+		text_renderer->property_xalign() = 0.5;
 
 	// not a playable service - de-emphasize the whole row instead of just leaving cells blank
 	text_renderer->property_style() = service.is_audio ? Pango::STYLE_NORMAL : Pango::STYLE_ITALIC;
@@ -550,7 +594,10 @@ void EDIScopeGTK::InitWidgets() {
 			"EDI network source\n"
 			"tcp://host:port\n"
 			"udp://host:port (unicast)\n"
-			"udp://mcast-ip:port (multicast)"
+			"udp://mcast-ip:port (multicast)\n"
+			"\n"
+			"Local file source\n"
+			"file:///path/to/file.eti (or .edi)"
 	);
 	for(const std::string& uri : LoadNetworkHistory())
 		combo_network_uri.append(uri);
@@ -585,8 +632,8 @@ void EDIScopeGTK::InitWidgets() {
 		return ((LISTED_SERVICE) (*model->get_iter(path))[services_table_cols.col_service]).is_audio;
 	});
 
-	static const char* services_table_column_titles[] =     {"SubChId", "SID", "ECC", "Label", "Short label", "CUs", "Protection", "Bit rate", "Format", "Samplerate", "Audio", "Language", "PTY"};
-	static const int services_table_column_min_widths[] =   {      60,    50,     50,    100,            80,     90,          80,         70,      110,           80,      70,         90,  180};
+	static const char* services_table_column_titles[] =     {"SubChId", "SID", "ECC", "Label", "Short label", "CUs", "Protection", "Bit rate", "Format", "Samplerate", "Audio", "Language", "PTY", "S", "P"};
+	static const int services_table_column_min_widths[] =   {      60,    50,     50,    100,            80,     90,          80,         70,      110,           80,      70,         90,  180,   30,  30};
 	int services_table_min_width = 0;
 	for(size_t i = 0; i < sizeof(services_table_column_titles) / sizeof(services_table_column_titles[0]); i++) {
 		Gtk::CellRendererText *renderer = Gtk::manage(new Gtk::CellRendererText());
@@ -595,11 +642,31 @@ void EDIScopeGTK::InitWidgets() {
 		col->set_cell_data_func(*renderer, sigc::bind(sigc::mem_fun(*this, &EDIScopeGTK::RenderServiceDetailCell), (int) i));
 		col->set_resizable(true);
 		col->set_min_width(services_table_column_min_widths[i]);
+		col->set_expand(false);	// otherwise GTK lets the last column (P) absorb all leftover width
 		services_table_min_width += services_table_column_min_widths[i];
 
 		// widest PTY string ("Children's programmes"/"Soft Rhythm and Blues") is 21 chars, plus a cosmetic margin
 		if(std::string(services_table_column_titles[i]) == "PTY")
 			renderer->property_width_chars() = 21 + 3;
+
+		// "S"/"P" (single checkmark glyph each) must match exactly - plain min_width alone still
+		// lets GTK's default autosizing grow each one independently to its own natural content
+		// width, which doesn't guarantee they end up equal
+		if(std::string(services_table_column_titles[i]) == "S" || std::string(services_table_column_titles[i]) == "P") {
+			col->set_sizing(Gtk::TREE_VIEW_COLUMN_FIXED);
+			col->set_fixed_width(services_table_column_min_widths[i]);
+		}
+	}
+
+	// trailing dummy column, title-less and empty: absorbs whatever leftover width GTK would
+	// otherwise hand to the last real column ("P") despite its own set_expand(false), so S/P stay
+	// exactly as wide as set_fixed_width() says regardless of how wide the view ends up being
+	{
+		Gtk::CellRendererText *renderer = Gtk::manage(new Gtk::CellRendererText());
+		int col_index = services_table.append_column("", *renderer) - 1;
+		Gtk::TreeViewColumn *col = services_table.get_column(col_index);
+		col->set_resizable(false);
+		col->set_expand(true);
 	}
 
 	services_table.set_has_tooltip(true);
@@ -646,6 +713,12 @@ void EDIScopeGTK::InitWidgets() {
 	tglbtn_logs.set_tooltip_text("Log of hot changes on the ensemble");
 	tglbtn_logs.set_halign(Gtk::ALIGN_START);
 	tglbtn_logs.set_margin_top(10);
+
+	tglbtn_spi.set_label("SPI");
+	tglbtn_spi.signal_clicked().connect(sigc::mem_fun(*this, &EDIScopeGTK::on_tglbtn_spi));
+	tglbtn_spi.set_tooltip_text("Service and Programme Information (ETSI TS 102 371/102 818), if the ensemble carries any");
+	tglbtn_spi.set_halign(Gtk::ALIGN_START);
+	tglbtn_spi.set_margin_top(10);
 
 	tglbtn_mute.set_image_from_icon_name("audio-volume-muted");
 	tglbtn_mute.signal_clicked().connect(sigc::mem_fun(*this, &EDIScopeGTK::on_tglbtn_mute));
@@ -771,7 +844,8 @@ void EDIScopeGTK::InitWidgets() {
 	header_grid.attach_next_to(frame_label_datetime, frame_label_ensemble, Gtk::POS_RIGHT, 1, 2);
 	header_grid.attach_next_to(frame_label_edi_delay, frame_label_datetime, Gtk::POS_RIGHT, 1, 2);
 	header_grid.attach_next_to(tglbtn_logs, frame_label_edi_delay, Gtk::POS_RIGHT, 1, 1);
-	header_grid.attach_next_to(tglbtn_record, tglbtn_logs, Gtk::POS_RIGHT, 1, 1);
+	header_grid.attach_next_to(tglbtn_spi, tglbtn_logs, Gtk::POS_RIGHT, 1, 1);
+	header_grid.attach_next_to(tglbtn_record, tglbtn_spi, Gtk::POS_RIGHT, 1, 1);
 	header_grid.attach_next_to(label_record, tglbtn_record, Gtk::POS_RIGHT, 3, 1);
 	header_grid.attach_next_to(tglbtn_mute, label_record, Gtk::POS_RIGHT, 1, 1);
 	header_grid.attach_next_to(vlmbtn, tglbtn_mute, Gtk::POS_RIGHT, 1, 1);
@@ -1106,6 +1180,20 @@ void EDIScopeGTK::on_tglbtn_logs() {
 	}
 }
 
+void EDIScopeGTK::on_tglbtn_spi() {
+	if(tglbtn_spi.get_active()) {
+		spi_window.AlignToParent();
+		spi_window.SetKnownServiceNames(known_service_names);
+		spi_window.Update(spi_info, spi_logo_data);
+		for(const std::pair<const std::pair<uint32_t,std::string>,SPI_SCHEDULE>& kv : spi_schedules)
+			spi_window.UpdateSchedule(kv.second);
+		spi_window.UpdateGroupInformation(spi_group_info, spi_logo_data);
+		spi_window.show();
+	} else {
+		spi_window.hide();
+	}
+}
+
 bool EDIScopeGTK::on_window_delete_event(GdkEventAny* /*any_event*/) {
 	// prevent exit while recording
 	if(tglbtn_record.get_active()) {
@@ -1263,13 +1351,6 @@ void EDIScopeGTK::UpdateCUBar() {
 	cu_bar.SetSelectedSubchId(selected_subchid);
 }
 
-bool EDIScopeGTK::HandleConfigureEvent(GdkEventConfigure* /*configure_event*/) {
-	// move together with the children window
-	if(logs_window.get_visible())
-		logs_window.AlignToParent();
-	return false;
-}
-
 void EDIScopeGTK::EnsembleUpdateProgressEmitted() {
 //	fprintf(stderr, "### EnsembleUpdateProgressEmitted\n");
 
@@ -1390,6 +1471,12 @@ void EDIScopeGTK::FICChangeServiceEmitted() {
 	LISTED_SERVICE new_service = fic_change_service.Pop();
 	std::string label = FICDecoder::ConvertLabelToUTF8(new_service.label, nullptr);
 
+	if(!label.empty()) {
+		known_service_names[(uint32_t) new_service.sid] = label;
+		if(spi_window.get_visible())
+			spi_window.SetKnownServiceNames(known_service_names);
+	}
+
 	bool add_new_row;
 	Gtk::ListStore::iterator row_it = UpdateServicesTableRow(new_service, &add_new_row);
 
@@ -1458,6 +1545,163 @@ void EDIScopeGTK::FICChangeDataServiceSIDEmitted() {
 	known_data_service_sids[change.first] = change.second;
 	RebuildDataSubchannelRows();
 	UpdateCUBar();
+}
+
+void EDIScopeGTK::FICChangeSPIServiceEmitted() {
+	SPI_SERVICE_CHANGE change = fic_change_spi_service.Pop();
+	fprintf(stderr, "EDIScopeGTK: SubChId %d: SPI service confirmed (packet address %d, FEC %s)\n",
+			change.subchid, change.address, change.fec ? "applied" : "not applied");
+
+	StopSPIService();
+
+	spi_subchid = change.subchid;
+	spi_mot_decoder = new MOTDirectoryDecoder(this);
+	spi_demux = new MSCPacketDemux(change.address, spi_mot_decoder);
+	ensemble_player->AddDataSink(spi_subchid, spi_demux);
+}
+
+void EDIScopeGTK::StopSPIService() {
+	if(spi_demux) {
+		ensemble_player->RemoveDataSink(spi_subchid);
+		delete spi_demux;
+		spi_demux = nullptr;
+		delete spi_mot_decoder;
+		spi_mot_decoder = nullptr;
+	}
+	spi_subchid = -1;
+
+	spi_info = SPI_SERVICE_INFORMATION();
+	spi_logo_data.clear();
+	spi_schedules.clear();
+	spi_group_info = SPI_GROUP_INFORMATION();
+	spi_window.Clear();
+	services_table.queue_draw();	// clears the "S"/"P" columns' checkmarks too
+}
+
+// best-effort, non-normative fallback for encoders that give a PI object neither a <scope> in its
+// own content nor a MOT ScopeID/ScopeStart/ScopeEnd parameter (observed on a real BBC capture) -
+// some legacy encoders still embed the SId/SCIdS directly in the ContentName instead, e.g.
+// "w20251002dC22Ec0.EHB" (date 2025-10-02, SId 0xC22E, SCIdS 0) - ETSI TS 102 371 clause 6.4.5
+// NOTE 2 explicitly warns ContentName carries no *guaranteed* meaning, so this is purely a last
+// resort to still show *something* useful rather than silently dropping the schedule
+static bool TryExtractSidFromLegacyContentName(const std::string& name, uint32_t& sid, int& scids) {
+	for(size_t d_pos = name.find('d'); d_pos != std::string::npos; d_pos = name.find('d', d_pos + 1)) {
+		size_t c_pos = d_pos + 5;
+		if(c_pos >= name.size() || name[c_pos] != 'c')
+			continue;
+
+		std::string hex = name.substr(d_pos + 1, 4);
+		if(hex.size() != 4 || !std::all_of(hex.begin(), hex.end(), [](unsigned char c) {return isxdigit(c);}))
+			continue;
+
+		size_t num_end = c_pos + 1;
+		while(num_end < name.size() && isxdigit((unsigned char) name[num_end]))
+			num_end++;
+		if(num_end == c_pos + 1)
+			continue;
+
+		sid = (uint32_t) std::stoul(hex, nullptr, 16);
+		scids = std::stoi(name.substr(c_pos + 1, num_end - c_pos - 1), nullptr, 16);
+		return true;
+	}
+
+	return false;
+}
+
+void EDIScopeGTK::SPIObjectCompleted(const MOT_DIR_OBJECT& info, const std::vector<uint8_t>& data) {
+	// ETSI TS 102 371 table 11: ContentSubType 0 = Service Information, 1 = Programme Information,
+	// 2 = Group Information
+	switch(info.content_sub_type) {
+	case 0: {
+		SPI_SERVICE_INFORMATION si;
+		if(SPIDecoder::DecodeServiceInformation(data, si))
+			spi_info_updated.PushAndEmit(si);
+		break;
+	}
+	case 1: {
+		SPI_SCHEDULE schedule;
+		if(SPIDecoder::DecodeSchedule(data, schedule)) {
+			// some encoders don't embed a <scope><serviceScope> in the schedule itself - fall
+			// back to the MOT ScopeID parameter to still know which service this is for
+			if(!schedule.has_scope_service)
+				schedule.has_scope_service = SPIDecoder::DecodeScopeId(info.scope_id, schedule.ecc, schedule.eid, schedule.sid, schedule.sid_32bit, schedule.scids);
+			// last resort: neither was present at all (seen on a real BBC capture) - try the
+			// ContentName convention instead, so the schedule is still shown (as "SId 0x...",
+			// see EDIScopeGTKSPIWindow::FindServiceName) rather than dropped entirely
+			if(!schedule.has_scope_service)
+				schedule.has_scope_service = TryExtractSidFromLegacyContentName(info.content_name, schedule.sid, schedule.scids);
+
+			SPIDecoder::DecodeScopeTime(info.scope_start, schedule.scope_start);
+			SPIDecoder::DecodeScopeTime(info.scope_end, schedule.scope_end);
+			// fall back to the first programme with a time, if the mandatory-in-practice MOT
+			// ScopeStart parameter is missing - still enough to bucket this schedule by day
+			if(!schedule.scope_start.valid)
+				for(const SPI_PROGRAMME& p : schedule.programmes)
+					if(p.time.valid) {
+						schedule.scope_start = p.time;
+						break;
+					}
+
+			spi_schedule_updated.PushAndEmit(schedule);
+		}
+		break;
+	}
+	case 2: {
+		SPI_GROUP_INFORMATION gi;
+		if(SPIDecoder::DecodeGroupInformation(data, gi))
+			spi_group_info_updated.PushAndEmit(gi);
+		break;
+	}
+	}
+}
+
+void EDIScopeGTK::SPIOtherObjectCompleted(const MOT_DIR_OBJECT& info, const std::vector<uint8_t>& data) {
+	// expected: a service/ensemble logo (ContentType=image, JFIF or PNG) - anything else is
+	// simply not something this window knows how to show, so it's silently ignored
+	if(info.content_type != MOT_FILE::CONTENT_TYPE_IMAGE)
+		return;
+
+	spi_logo_updated.PushAndEmit(SPI_LOGO_UPDATE{info.content_name, data});
+}
+
+void EDIScopeGTK::SPIInfoUpdatedEmitted() {
+	spi_info = spi_info_updated.Pop();
+	services_table.queue_draw();	// refreshes the "S" column's checkmarks
+	if(spi_window.get_visible())
+		spi_window.Update(spi_info, spi_logo_data);
+}
+
+void EDIScopeGTK::SPILogoUpdatedEmitted() {
+	SPI_LOGO_UPDATE update = spi_logo_updated.Pop();
+	spi_logo_data[update.content_name] = update.data;
+	if(spi_window.get_visible()) {
+		spi_window.Update(spi_info, spi_logo_data);
+		spi_window.UpdateGroupInformation(spi_group_info, spi_logo_data);	// groups can have logos too
+	}
+}
+
+void EDIScopeGTK::SPIScheduleUpdatedEmitted() {
+	SPI_SCHEDULE schedule = spi_schedule_updated.Pop();
+	if(schedule.has_scope_service) {
+		std::string date_key = SPIDecoder::FormatDate(schedule.scope_start);
+		spi_schedules[std::make_pair(schedule.sid, date_key)] = schedule;
+		services_table.queue_draw();	// refreshes the "P" column's checkmarks
+	}
+	if(spi_window.get_visible())
+		spi_window.UpdateSchedule(schedule);
+}
+
+void EDIScopeGTK::SPIGroupInfoUpdatedEmitted() {
+	spi_group_info = spi_group_info_updated.Pop();
+	if(spi_window.get_visible())
+		spi_window.UpdateGroupInformation(spi_group_info, spi_logo_data);
+}
+
+void EDIScopeGTK::FICRemoveSPIServiceEmitted() {
+	int subchid = fic_remove_spi_service.Pop();
+	fprintf(stderr, "EDIScopeGTK: SubChId %d: SPI service removed\n", subchid);
+	if(subchid == spi_subchid)
+		StopSPIService();
 }
 
 void EDIScopeGTK::FICRemoveDataServiceSIDEmitted() {
@@ -1560,7 +1804,22 @@ void EDIScopeGTK::EnsureEnsemblePlayer(const std::string& format) {
 	ensemble_player->SetAudioVolume(volume);
 }
 
+void EDIScopeGTK::ShowEnsembleWaitingMessage() {
+	// an EDI source's frames are only actually decoded once their own embedded timestamp comes
+	// due (see EDIPlayer) - with a mux configured for a large TIST offset/margin, that can hold
+	// back the first FIG 0/0 (ensemble label) for that many seconds after the connection itself
+	// already succeeded, which otherwise just looks like nothing is happening
+	label_ensemble.set_markup("<i>Waiting for timestamp synchronisation...</i>");
+	frame_label_ensemble.set_tooltip_text(
+			"EDI frames are held back and only decoded once their own embedded timestamp comes due.\n"
+			"With a mux configured for a large TIST offset, this can take several seconds - even "
+			"though the connection itself already succeeded.");
+}
+
 void EDIScopeGTK::StopEnsembleSource() {
+	StopSPIService();
+	known_service_names.clear();
+
 	if(ensemble_source) {
 		ensemble_source->DoExit();
 		ensemble_source_thread.join();
@@ -1577,6 +1836,11 @@ void EDIScopeGTK::StopEnsembleSource() {
 	ensemble_player->StopAudio();
 	label_ensemble.set_label("");
 	frame_label_ensemble.set_tooltip_text("");
+
+	// position progress only applies to a file source - hide it here so it doesn't linger once
+	// that source is torn down (e.g. switching over to a live stream); it comes back on its own
+	// if the next source is itself a file (see EnsembleUpdateProgressEmitted)
+	progress_position.hide();
 
 	frame_label_datetime.set_sensitive(false);
 	frame_label_datetime.set_tooltip_text("");
@@ -1614,6 +1878,34 @@ void EDIScopeGTK::AddToNetworkHistory(const std::string& uri) {
 void EDIScopeGTK::on_tglbtn_network_connect() {
 	if(tglbtn_network_connect.get_active()) {
 		std::string uri = combo_network_uri.get_active_text();
+
+		static const std::string PREFIX_FILE = "file://";
+		if(uri.compare(0, PREFIX_FILE.size(), PREFIX_FILE) == 0) {
+			std::string path = StringTools::FilePathFromArg(uri);
+
+			AddToNetworkHistory(uri);
+
+			// no way to pick a format in this box - infer it from the extension (defaulting to
+			// ETI, same as the CLI's own default) rather than requiring a second field just for this
+			std::string lower_path = path;
+			std::transform(lower_path.begin(), lower_path.end(), lower_path.begin(), ::tolower);
+			bool is_edi = lower_path.size() >= 4 && lower_path.compare(lower_path.size() - 4, 4, ".edi") == 0;
+
+			StopEnsembleSource();
+			EnsureEnsemblePlayer(is_edi ? EnsembleSource::FORMAT_EDI : EnsembleSource::FORMAT_ETI);
+			if(is_edi)
+				ShowEnsembleWaitingMessage();
+
+			if(is_edi)
+				ensemble_source = new EDISource(path, this);
+			else
+				ensemble_source = new ETISource(path, this);
+			ensemble_source_thread = std::thread(&EnsembleSource::Main, ensemble_source);
+
+			combo_network_uri.set_sensitive(false);
+			tglbtn_network_connect.set_label("Disconnect");
+			return;
+		}
 
 		static const std::string PREFIX_TCP = "tcp://";
 		static const std::string PREFIX_UDP = "udp://";
@@ -1663,6 +1955,7 @@ void EDIScopeGTK::on_tglbtn_network_connect() {
 		// take over from whatever was running before (the initial CLI source)
 		StopEnsembleSource();
 		EnsureEnsemblePlayer(EnsembleSource::FORMAT_EDI);
+		ShowEnsembleWaitingMessage();
 
 		if(is_tcp)
 			ensemble_source = new EDITCPSource(host, port, this);

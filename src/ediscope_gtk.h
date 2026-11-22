@@ -2,6 +2,9 @@
     DABlin - capital DAB experience
     Copyright (C) 2015-2024 Stefan Pöschel
 
+    EDIScope - DAB+/EDI diagnostic player
+    Copyright (C) 2025-2026 Yoann Queret
+
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
@@ -46,6 +49,10 @@
 #include "edi_player.h"
 #include "fic_decoder.h"
 #include "pad_decoder.h"
+#include "msc_packet_demux.h"
+#include "mot_directory_decoder.h"
+#include "spi_decoder.h"
+#include "ediscope_gtk_spi.h"
 #include "tools.h"
 #include "version.h"
 
@@ -148,7 +155,7 @@ typedef std::list<RecSample> rec_samples_t;
 
 
 // --- EDIScopeGTK -----------------------------------------------------------------
-class EDIScopeGTK : public Gtk::Window, EnsembleSourceObserver, EnsemblePlayerObserver, FICDecoderObserver, PADDecoderObserver, UntouchedStreamConsumer {
+class EDIScopeGTK : public Gtk::Window, EnsembleSourceObserver, EnsemblePlayerObserver, FICDecoderObserver, PADDecoderObserver, UntouchedStreamConsumer, MOTDirectoryDecoderObserver {
 private:
 	EDIScopeGTKOptions options;
 
@@ -158,6 +165,7 @@ private:
 	bool switch_service_applied;
 
 	EDIScopeGTKLogsWindow logs_window;
+	EDIScopeGTKSPIWindow spi_window;
 
 	EnsembleSource *ensemble_source;
 	std::thread ensemble_source_thread;
@@ -235,6 +243,7 @@ private:
 	Gtk::ToggleButton tglbtn_network_connect;
 	void on_tglbtn_network_connect();
 	void ShowNetworkConnectError(const std::string& message);
+	void ShowEnsembleWaitingMessage();
 	void AddToNetworkHistory(const std::string& uri);
 
 	FIC_ENSEMBLE ensemble;
@@ -268,6 +277,7 @@ private:
 	Gtk::Label label_record;
 
 	Gtk::ToggleButton tglbtn_logs;
+	Gtk::ToggleButton tglbtn_spi;
 	Gtk::ToggleButton tglbtn_mute;
 	Gtk::VolumeButton vlmbtn;
 
@@ -318,12 +328,12 @@ private:
 	void on_tglbtn_mute();
 	void on_vlmbtn(double value);
 	void on_tglbtn_logs();
+	void on_tglbtn_spi();
 	void on_services_table_selection_changed();
 	void on_cu_bar_service_clicked(uint16_t sid, int scids);
 	bool on_window_delete_event(GdkEventAny* any_event);
 
 	bool HandleKeyPressEvent(GdkEventKey* key_event);
-	bool HandleConfigureEvent(GdkEventConfigure* configure_event);
 	bool CheckForIndexKey(GdkEventKey* key_event, int old_index, int& new_index);
 
 	GTKDispatcherQueue<bool> do_rec_status_update;
@@ -367,6 +377,51 @@ private:
 	GTKDispatcherQueue<int> fic_remove_data_service_sid;
 	void FICRemoveDataServiceSID(int subchid) {fic_remove_data_service_sid.PushAndEmit(subchid);}
 	void FICRemoveDataServiceSIDEmitted();
+
+	struct SPI_SERVICE_CHANGE {int subchid; int address; bool fec;};
+	GTKDispatcherQueue<SPI_SERVICE_CHANGE> fic_change_spi_service;
+	void FICChangeSPIService(int subchid, int address, bool fec) {fic_change_spi_service.PushAndEmit(SPI_SERVICE_CHANGE{subchid, address, fec});}
+	void FICChangeSPIServiceEmitted();
+
+	// the one SPI data sub-channel currently wired up (ediscope only ever tracks/displays one
+	// at a time for now - most ensembles carry at most one anyway)
+	int spi_subchid = -1;
+	MSCPacketDemux *spi_demux = nullptr;
+	MOTDirectoryDecoder *spi_mot_decoder = nullptr;
+	void StopSPIService();
+	void SPIObjectCompleted(const MOT_DIR_OBJECT& info, const std::vector<uint8_t>& data) override;
+	void SPIOtherObjectCompleted(const MOT_DIR_OBJECT& info, const std::vector<uint8_t>& data) override;
+
+	// decoded SPI state, as last shown in spi_window - kept here (not just inside spi_window) so
+	// it survives the window being hidden/shown again without re-decoding anything
+	SPI_SERVICE_INFORMATION spi_info;
+	std::map<std::string,std::vector<uint8_t>> spi_logo_data;
+
+	GTKDispatcherQueue<SPI_SERVICE_INFORMATION> spi_info_updated;
+	void SPIInfoUpdatedEmitted();
+
+	struct SPI_LOGO_UPDATE {std::string content_name; std::vector<uint8_t> data;};
+	GTKDispatcherQueue<SPI_LOGO_UPDATE> spi_logo_updated;
+	void SPILogoUpdatedEmitted();
+
+	// keyed by (service SId, "YYYY-MM-DD") - a PI object is per service per day (ETSI TS 102 371
+	// clause 6.3.1), so a service can have several of these at once
+	std::map<std::pair<uint32_t,std::string>,SPI_SCHEDULE> spi_schedules;
+	GTKDispatcherQueue<SPI_SCHEDULE> spi_schedule_updated;
+	void SPIScheduleUpdatedEmitted();
+
+	SPI_GROUP_INFORMATION spi_group_info;
+	GTKDispatcherQueue<SPI_GROUP_INFORMATION> spi_group_info_updated;
+	void SPIGroupInfoUpdatedEmitted();
+
+	// SId -> best-known FIC label (FIG 1/1), independently of whatever SPI's own SI happens to
+	// describe - lets the Programme/Groupes tabs show a real name even for a service SPI's own
+	// SI never mentions, as long as the mux's FIC does
+	std::map<uint32_t,std::string> known_service_names;
+
+	GTKDispatcherQueue<int> fic_remove_spi_service;
+	void FICRemoveSPIService(int subchid) {fic_remove_spi_service.PushAndEmit(subchid);}
+	void FICRemoveSPIServiceEmitted();
 
 	void FICChangeUTCDateTime(const FIC_DAB_DT& utc_dt);
 

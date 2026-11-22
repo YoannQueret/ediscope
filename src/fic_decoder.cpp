@@ -2,6 +2,9 @@
     DABlin - capital DAB experience
     Copyright (C) 2015-2022 Stefan Pöschel
 
+    EDIScope - DAB+/EDI diagnostic player
+    Copyright (C) 2025-2026 Yoann Queret
+
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
@@ -31,8 +34,14 @@ void FICDecoder::Reset() {
 	services.clear();
 	subchannels.clear();
 	data_service_sids.clear();
+	data_service_subchids.clear();
 	packet_data_service_sids.clear();
+	packet_data_service_scids.clear();
 	packet_data_subchids.clear();
+	packet_data_addresses.clear();
+	spi_service_sids.clear();
+	spi_subchannels.clear();
+	packet_mode_fec.clear();
 	utc_dt = FIC_DAB_DT();
 }
 
@@ -94,11 +103,18 @@ void FICDecoder::ProcessFIG0(const uint8_t *data, size_t len) {
 		return;
 
 	if(header.pd) {
-		// data mode (P/D=1): only FIG 0/2 is understood here, to resolve the SId of a plain
-		// data service (e.g. a locally-configured EPG sub-channel) - everything else keeps
-		// being ignored, as its data-mode variant (if any) isn't verified/implemented
-		if(header.extension == 2)
+		// data mode (P/D=1): FIG 0/2 resolves the SId of a plain data service (e.g. a
+		// locally-configured EPG sub-channel), FIG 0/13 signals which user application (if
+		// any) runs on it - everything else keeps being ignored, as its data-mode variant
+		// (if any) isn't verified/implemented
+		switch(header.extension) {
+		case 2:
 			ProcessFIG0_2_Data(data, len);
+			break;
+		case 13:
+			ProcessFIG0_13_Data(data, len);
+			break;
+		}
 		return;
 	}
 
@@ -130,6 +146,9 @@ void FICDecoder::ProcessFIG0(const uint8_t *data, size_t len) {
 		break;
 	case 13:
 		ProcessFIG0_13(data, len);
+		break;
+	case 14:
+		ProcessFIG0_14(data, len);
 		break;
 	case 17:
 		ProcessFIG0_17(data, len);
@@ -301,11 +320,16 @@ void FICDecoder::SetDataServiceSid(int subchid, uint32_t sid) {
 	if(current_sid == sid)
 		return;
 	current_sid = sid;
+	data_service_subchids[sid] = subchid;
 
 	fprintf(stderr, "FICDecoder: SubChId %2d: data service SId 0x%08X\n", subchid, sid);
 	Log("SubChId " + std::to_string(subchid) + ": data service SId " + StringTools::IntToHex((int) sid, sid > 0xFFFF ? 8 : 4));
 
 	observer->FICChangeDataServiceSID(subchid, sid);
+
+	// the SubChId possibly changed under an already-known SPI SId (e.g. a mux-side hot
+	// reconfiguration) - re-resolve so FICChangeSPIService fires again with the right one
+	ResolveSPIService(sid);
 }
 
 void FICDecoder::ResolvePacketDataService(int scid) {
@@ -315,6 +339,54 @@ void FICDecoder::ResolvePacketDataService(int scid) {
 	std::map<int,int>::const_iterator subchid_it = packet_data_subchids.find(scid);
 	if(sid_it != packet_data_service_sids.end() && subchid_it != packet_data_subchids.end())
 		SetDataServiceSid(subchid_it->second, sid_it->second);
+
+	if(sid_it != packet_data_service_sids.end())
+		ResolveSPIService(sid_it->second);
+}
+
+void FICDecoder::ResolveSPIService(uint32_t sid) {
+	// only handles the primary component (SCIdS 0) of a data service, i.e. the common case
+	// where the SPI/EPG user application is the sole component of its own data service (see
+	// the same simplification already made for FIG 0/2 data mode, above)
+	if(spi_service_sids.find(sid) == spi_service_sids.end())
+		return;
+
+	int subchid = -1;
+	std::map<uint32_t,int>::const_iterator subchid_it = data_service_subchids.find(sid);
+	if(subchid_it != data_service_subchids.end())
+		subchid = subchid_it->second;
+
+	int address = -1;
+	std::map<uint32_t,int>::const_iterator scid_it = packet_data_service_scids.find(sid);
+	if(scid_it != packet_data_service_scids.end()) {
+		std::map<int,int>::const_iterator address_it = packet_data_addresses.find(scid_it->second);
+		if(address_it != packet_data_addresses.end())
+			address = address_it->second;
+	}
+
+	if(subchid == -1 || address == -1)
+		return;
+
+	int& current_address = spi_subchannels[subchid];
+	if(current_address == address)
+		return;
+	current_address = address;
+
+	bool fec = packet_mode_fec.count(subchid) ? packet_mode_fec[subchid] : false;
+
+	fprintf(stderr, "FICDecoder: SubChId %2d: SPI service (packet mode, address %d, FEC %s)\n", subchid, address, fec ? "applied" : "not applied");
+	Log("SubChId " + std::to_string(subchid) + ": SPI service (packet mode, address " + std::to_string(address) + ", FEC " + (fec ? "applied" : "not applied") + ")");
+
+	observer->FICChangeSPIService(subchid, address, fec);
+}
+
+void FICDecoder::RemoveSPIService(int subchid) {
+	if(spi_subchannels.erase(subchid)) {
+		fprintf(stderr, "FICDecoder: SubChId %2d: SPI service removed\n", subchid);
+		Log("SubChId " + std::to_string(subchid) + ": SPI service removed");
+
+		observer->FICRemoveSPIService(subchid);
+	}
 }
 
 void FICDecoder::ProcessFIG0_2_Data(const uint8_t *data, size_t len) {
@@ -343,6 +415,7 @@ void FICDecoder::ProcessFIG0_2_Data(const uint8_t *data, size_t len) {
 				} else if(tmid == 0b11) {	// MSC packet data
 					int scid = (data[offset] & 0x3F) << 6 | (data[offset + 1] >> 2);
 					packet_data_service_sids[scid] = sid32;
+					packet_data_service_scids[sid32] = scid;
 					ResolvePacketDataService(scid);
 				}
 			}
@@ -353,22 +426,30 @@ void FICDecoder::ProcessFIG0_2_Data(const uint8_t *data, size_t len) {
 }
 
 void FICDecoder::ProcessFIG0_3(const uint8_t *data, size_t len) {
-	// FIG 0/3 - Service component definition in packet mode: SCId -> SubChId (+ packet
-	// address, not used here). Needed to resolve the sub-channel of a "MSC packet data"
-	// (TMid=3) data service component found in FIG 0/2 (data mode).
+	// FIG 0/3 - Service component definition in packet mode: SCId -> SubChId + packet address.
+	// Needed to resolve the sub-channel (and, for SPI, the packet address) of a "MSC packet
+	// data" (TMid=3) data service component found in FIG 0/2 (data mode).
 
 	for(size_t offset = 0; offset + 5 <= len;) {
 		int scid = data[offset] << 4 | (data[offset + 1] >> 4);
 		bool scca_flag = data[offset + 1] & 0x01;
 		int subchid = data[offset + 3] >> 2;
+		int address = (data[offset + 3] & 0x03) << 8 | data[offset + 4];
 		offset += 5;
 		if(scca_flag)
-			offset += 2;	// SCCA field, not used
+			offset += 2;	// CAOrg field, not used
 
+		bool changed = false;
 		if(packet_data_subchids[scid] != subchid) {
 			packet_data_subchids[scid] = subchid;
-			ResolvePacketDataService(scid);
+			changed = true;
 		}
+		if(packet_data_addresses[scid] != address) {
+			packet_data_addresses[scid] = address;
+			changed = true;
+		}
+		if(changed)
+			ResolvePacketDataService(scid);
 	}
 }
 
@@ -618,6 +699,60 @@ void FICDecoder::ProcessFIG0_13(const uint8_t *data, size_t len) {
 			}
 
 			offset += ua_data_length;
+		}
+	}
+}
+
+void FICDecoder::ProcessFIG0_13_Data(const uint8_t *data, size_t len) {
+	// FIG 0/13 (data mode, P/D=1) - User application information for a data service (e.g. SPI)
+	// only handles the primary component (SCIdS 0), as with FIG 0/2 data mode above; there's
+	// no X-PAD data field here (that only applies to applications carried in an audio
+	// service's X-PAD, never to a data service's own component)
+
+	static const int ua_type_epg = 0x007;	// ETSI TS 101 756 table 16, ETSI TS 102 818 (SPI)
+
+	for(size_t offset = 0; offset + 5 <= len;) {
+		uint32_t sid = (uint32_t) data[offset] << 24 | (uint32_t) data[offset + 1] << 16 |
+				(uint32_t) data[offset + 2] << 8 | data[offset + 3];
+		offset += 4;
+
+		int scids = data[offset] >> 4;
+		size_t num_scids_uas = data[offset] & 0x0F;
+		offset++;
+
+		for(size_t scids_ua = 0; scids_ua < num_scids_uas && offset + 2 <= len; scids_ua++) {
+			int ua_type = data[offset] << 3 | data[offset + 1] >> 5;
+			size_t ua_data_length = data[offset + 1] & 0x1F;
+			offset += 2;
+
+			if(scids == 0 && ua_type == ua_type_epg) {
+				if(spi_service_sids.insert(sid).second)
+					ResolveSPIService(sid);
+			}
+
+			offset += ua_data_length;
+		}
+	}
+}
+
+void FICDecoder::ProcessFIG0_14(const uint8_t *data, size_t len) {
+	// FIG 0/14 - FEC sub-channel organization: SubChId -> FEC scheme applied (0/1; 2/3 reserved)
+
+	for(size_t offset = 0; offset < len; offset++) {
+		int subchid = data[offset] >> 2;
+		bool fec = (data[offset] & 0x03) == 0x01;
+
+		bool& current_fec = packet_mode_fec[subchid];
+		if(current_fec != fec) {
+			current_fec = fec;
+
+			fprintf(stderr, "FICDecoder: SubChId %2d: FEC scheme %s\n", subchid, fec ? "applied" : "not applied");
+			Log("SubChId " + std::to_string(subchid) + ": FEC scheme " + (fec ? "applied" : "not applied"));
+
+			// the FEC status of a sub-channel already confirmed as SPI may have just changed
+			std::map<int,int>::const_iterator spi_it = spi_subchannels.find(subchid);
+			if(spi_it != spi_subchannels.end())
+				observer->FICChangeSPIService(subchid, spi_it->second, fec);
 		}
 	}
 }
@@ -1000,6 +1135,7 @@ void FICDecoder::PruneStaleSubchannels() {
 			observer->FICRemoveSubchannel(it->first);
 			if(data_service_sids.erase(it->first))
 				observer->FICRemoveDataServiceSID(it->first);
+			RemoveSPIService(it->first);
 			it = subchannels.erase(it);
 		} else {
 			++it;

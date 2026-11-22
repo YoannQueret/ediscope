@@ -1,5 +1,6 @@
 /*
-    DABlin - capital DAB experience
+    EDIScope - DAB+/EDI diagnostic player
+    Copyright (C) 2025-2026 Yoann Queret
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -22,13 +23,13 @@
 
 // --- EDIScopeGTKLogsWindow -----------------------------------------------------------------
 EDIScopeGTKLogsWindow::EDIScopeGTKLogsWindow() {
-	prev_parent_x = -1;
-	prev_parent_y = -1;
+	positioned = false;
 
 	set_title("Logs");
 	set_type_hint(Gdk::WINDOW_TYPE_HINT_UTILITY);
 	set_default_size(600, 300);
-	set_deletable(false);
+	// deletable: closing via the window manager's own close button is handled (kept alive, just
+	// hidden) by EDIScopeGTK, which also owns the toggle button that must stay in sync with it
 
 	logs_liststore = Gtk::ListStore::create(logs_cols);
 	logs_table.set_model(logs_liststore);
@@ -44,25 +45,18 @@ EDIScopeGTKLogsWindow::EDIScopeGTKLogsWindow() {
 }
 
 void EDIScopeGTKLogsWindow::AlignToParent() {
-	int x, y, w, h, this_x, this_y;
+	// only once, the first time the window is shown - afterwards it stays wherever the user left
+	// it (moved or not), it doesn't stick to / follow the main window around
+	if(positioned)
+		return;
+	positioned = true;
+
+	int x, y, w, h;
 	get_transient_for()->get_position(x, y);
 	get_transient_for()->get_size(w, h);
-	get_position(this_x, this_y);	// event position doesn't work!
-
-	int curr_parent_x = x + w;
-	int curr_parent_y = y;
 
 	// TODO: fix multi head issue
-	if(prev_parent_x == -1 && prev_parent_y == -1) {
-		// first: align to the right of parent
-		move(curr_parent_x + 20, curr_parent_y);	// add some horizontal padding for WM decoration
-	} else {
-		// later: follow parent
-		move(curr_parent_x + (this_x - prev_parent_x), curr_parent_y + (this_y - prev_parent_y));
-	}
-
-	prev_parent_x = curr_parent_x;
-	prev_parent_y = curr_parent_y;
+	move(x + w + 20, y);	// add some horizontal padding for WM decoration
 }
 
 void EDIScopeGTKLogsWindow::AppendLogMessage(const std::string& message) {

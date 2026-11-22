@@ -2,6 +2,9 @@
     DABlin - capital DAB experience
     Copyright (C) 2015-2019 Stefan Pöschel
 
+    EDIScope - DAB+/EDI diagnostic player
+    Copyright (C) 2025-2026 Yoann Queret
+
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
@@ -76,21 +79,35 @@ void ETIPlayer::DecodeFrame(const uint8_t *eti_frame) {
 	// lock only now, as due to the FIC, the audio service may be set
 	std::lock_guard<std::mutex> lock(audio_service_mutex);
 
-	// abort here, if ATM no sub-channel selected
+	// every sub-channel's own offset/length has to be walked regardless of whether an audio
+	// service is currently selected, so that independent data_sinks (e.g. SPI) below keep
+	// receiving bytes no matter what - or whether anything - is being listened to
+	int cur_offset = subch_offset;
+
+	{
+		std::lock_guard<std::mutex> data_lock(data_sinks_mutex);
+
+		for(int i = 0; i < nst; i++) {
+			int scid = (eti_frame[8 + i*4] & 0xFC) >> 2;
+			int stl = (eti_frame[8 + i*4 + 2] & 0x03) << 8 | eti_frame[8 + i*4 + 3];
+			int bytes = stl * 8;
+
+			if(!audio_service.IsNone() && scid == audio_service.subchid) {
+				subch_offset = cur_offset;
+				subch_bytes = bytes;
+			}
+
+			std::map<int,SubchannelSink*>::const_iterator sink_it = data_sinks.find(scid);
+			if(sink_it != data_sinks.end() && sink_it->second)
+				sink_it->second->Feed(eti_frame + cur_offset, bytes);
+
+			cur_offset += bytes;
+		}
+	}
+
 	if(audio_service.IsNone())
 		return;
 
-	for(int i = 0; i < nst; i++) {
-		int scid = (eti_frame[8 + i*4] & 0xFC) >> 2;
-		int stl = (eti_frame[8 + i*4 + 2] & 0x03) << 8 | eti_frame[8 + i*4 + 3];
-
-		if(scid == audio_service.subchid) {
-			subch_bytes = stl * 8;
-			break;
-		} else {
-			subch_offset += stl * 8;
-		}
-	}
 	if(subch_bytes == 0) {
 		fprintf(stderr, "ETIPlayer: ignored ETI frame without sub-channel %d\n", audio_service.subchid);
 		return;

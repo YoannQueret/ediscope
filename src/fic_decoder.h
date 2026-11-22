@@ -2,6 +2,9 @@
     DABlin - capital DAB experience
     Copyright (C) 2015-2022 Stefan Pöschel
 
+    EDIScope - DAB+/EDI diagnostic player
+    Copyright (C) 2025-2026 Yoann Queret
+
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
@@ -320,6 +323,15 @@ public:
 	virtual void FICChangeDataServiceSID(int /*subchid*/, uint32_t /*sid*/) {}
 	virtual void FICRemoveDataServiceSID(int /*subchid*/) {}
 
+	// a data sub-channel's primary component (SCIdS 0) has been confirmed (FIG 0/13, P/D=1,
+	// UserApplicationType 0x007 "EPG", see ETSI TS 102 371) to carry an SPI service in MSC
+	// packet mode, at the given packet Address (see ETSI EN 300 401 clause 5.3.2.1) - the SPI
+	// data itself (MOT Directory carousel) still has to be extracted from that address. fec
+	// indicates whether the sub-channel also carries the outer RS FEC scheme (FIG 0/14,
+	// clause 5.3.5), which then has to be undone before the packets become parsable
+	virtual void FICChangeSPIService(int /*subchid*/, int /*address*/, bool /*fec*/) {}
+	virtual void FICRemoveSPIService(int /*subchid*/) {}
+
 	// human-readable record of a hot change on the ensemble (EId, SId, label, short label, protection, bit rate, ...)
 	virtual void FICLogMessage(const std::string& /*message*/) {}
 
@@ -341,11 +353,13 @@ private:
 	void ProcessFIG0_2(const uint8_t *data, size_t len);
 	void ProcessFIG0_2_Data(const uint8_t *data, size_t len);
 	void ProcessFIG0_3(const uint8_t *data, size_t len);
+	void ProcessFIG0_13_Data(const uint8_t *data, size_t len);
 	void ProcessFIG0_5(const uint8_t *data, size_t len);
 	void ProcessFIG0_8(const uint8_t *data, size_t len);
 	void ProcessFIG0_9(const uint8_t *data, size_t len);
 	void ProcessFIG0_10(const uint8_t *data, size_t len);
 	void ProcessFIG0_13(const uint8_t *data, size_t len);
+	void ProcessFIG0_14(const uint8_t *data, size_t len);
 	void ProcessFIG0_17(const uint8_t *data, size_t len);
 	void ProcessFIG0_18(const uint8_t *data, size_t len);
 	void ProcessFIG0_19(const uint8_t *data, size_t len);
@@ -364,6 +378,8 @@ private:
 
 	void SetDataServiceSid(int subchid, uint32_t sid);
 	void ResolvePacketDataService(int scid);
+	void ResolveSPIService(uint32_t sid);
+	void RemoveSPIService(int subchid);
 
 	void Log(const std::string& message);
 
@@ -373,8 +389,14 @@ private:
 	fic_services_t services;
 	fic_subchannels_t subchannels;	// from FIG 0/1: SubChId -> FIC_SUBCHANNEL
 	std::map<int,uint32_t> data_service_sids;	// from FIG 0/2 (P/D=1): SubChId -> data service SId
+	std::map<uint32_t,int> data_service_subchids;	// reverse of data_service_sids: SId -> SubChId
 	std::map<int,uint32_t> packet_data_service_sids;	// from FIG 0/2 (P/D=1, TMid=3): SCId -> SId (pending)
+	std::map<uint32_t,int> packet_data_service_scids;	// reverse of packet_data_service_sids: SId -> SCId
 	std::map<int,int> packet_data_subchids;	// from FIG 0/3: SCId -> SubChId (pending)
+	std::map<int,int> packet_data_addresses;	// from FIG 0/3: SCId -> packet Address (pending)
+	std::set<uint32_t> spi_service_sids;	// from FIG 0/13 (P/D=1): data service SIds whose primary component (SCIdS 0) is UAtype EPG
+	std::map<int,int> spi_subchannels;	// currently confirmed SPI (FIG 0/13 UAtype EPG) sub-channels: SubChId -> packet Address
+	std::map<int,bool> packet_mode_fec;	// from FIG 0/14: SubChId -> FEC scheme applied (EN 300 401 clause 5.3.5)
 
 	void RemoveService(const FIC_SERVICE& service);
 	void PruneStaleSubchannels();

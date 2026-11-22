@@ -26,11 +26,15 @@ set(ediscope_cli_sources
 set(ediscope_gtk_sources
     mot_manager.cpp
     pad_decoder.cpp
+    msc_packet_demux.cpp
+    mot_directory_decoder.cpp
+    spi_decoder.cpp
     ediscope_gtk.cpp
     ediscope_gtk_dl_plus.cpp
     ediscope_gtk_sls.cpp
     ediscope_gtk_cu_bar.cpp
     ediscope_gtk_logs.cpp
+    ediscope_gtk_spi.cpp
     ediscope_gtk_level_meter.cpp
     ediscope_gtk_spectrum.cpp
     ediscope_gtk_stereometer.cpp

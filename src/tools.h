@@ -2,6 +2,9 @@
     DABlin - capital DAB experience
     Copyright (C) 2015-2021 Stefan Pöschel
 
+    EDIScope - DAB+/EDI diagnostic player
+    Copyright (C) 2025-2026 Yoann Queret
+
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
@@ -42,6 +45,11 @@ public:
 	static size_t UTF8Len(const std::string &s);
 	static std::string UTF8Substr(const std::string &s, size_t pos, size_t count);
 	static std::string IntToHex(int value, size_t nibbles);
+
+	// strips a "file://" prefix (as produced by a file manager's "copy as path"/drag-and-drop,
+	// or a browser's address bar) and percent-decodes the rest, so a URI pasted/dropped as the
+	// [file] argument works the same as a plain path - returns arg unchanged if it isn't one
+	static std::string FilePathFromArg(const std::string &arg);
 
 	// a SId's hex form, without the "0x" prefix, sized to 4 nibbles (16-bit, programme
 	// services) or 8 nibbles (32-bit, data services) depending on its actual magnitude

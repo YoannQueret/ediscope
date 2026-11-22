@@ -2,6 +2,9 @@
     DABlin - capital DAB experience
     Copyright (C) 2015-2024 Stefan Pöschel
 
+    EDIScope - DAB+/EDI diagnostic player
+    Copyright (C) 2025-2026 Yoann Queret
+
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
@@ -43,7 +46,7 @@ static void usage(const char* exe) {
 					"  -u            Output untouched audio stream to stdout instead of using SDL\n"
 					"  -I            Don't catch up on stream after interruption\n"
 					"  -F            Disable dynamic FIC messages (dynamic PTY, announcements)\n"
-					"  file          Input file to be played (stdin, if not specified)\n",
+					"  file          Input file to be played (stdin, if not specified) - a file:// URI works too\n",
 					EnsembleSource::FORMAT_ETI.c_str(),
 					EnsembleSource::FORMAT_EDI.c_str()
 			);
@@ -124,7 +127,7 @@ int main(int argc, char **argv) {
 	case 0:
 		break;
 	case 1:
-		options.filename = argv[optind];
+		options.filename = StringTools::FilePathFromArg(argv[optind]);
 		break;
 	default:
 		usage(argv[0]);

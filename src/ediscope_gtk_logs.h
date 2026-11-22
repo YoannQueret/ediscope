@@ -1,5 +1,6 @@
 /*
-    DABlin - capital DAB experience
+    EDIScope - DAB+/EDI diagnostic player
+    Copyright (C) 2025-2026 Yoann Queret
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -44,8 +45,7 @@ private:
 	EDIScopeGTKLogColumns logs_cols;
 	Glib::RefPtr<Gtk::ListStore> logs_liststore;
 
-	int prev_parent_x;
-	int prev_parent_y;
+	bool positioned;
 public:
 	EDIScopeGTKLogsWindow();
 
