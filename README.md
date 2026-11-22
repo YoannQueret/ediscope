@@ -52,6 +52,17 @@ in this fork, on top of stock DABlin:
   disappear from FIG 0/2. See
   [Services table, CU bar and ensemble log](#services-table-cu-bar-and-ensemble-log).
 
+* **SPI (Service and Programme Information) / EPG.** When the ensemble
+  carries an SPI data service (FIG 0/13 User Application EPG, ETSI TS
+  102 371/102 818), EDIScope detects it automatically and decodes its
+  MOT Directory-mode carousel: Service Information (per-service names,
+  DAB bearer, logos), Programme Information (per-day schedules) and
+  Group Information (programme groups), all reachable from a dedicated
+  **SPI** window. The services table also gains "S"/"P" columns marking,
+  per service, whether Service/Programme Information is currently
+  available for it. See
+  [SPI (Service and Programme Information)](#spi-service-and-programme-information).
+
 * **More visualizations.** A frequency **spectrum analyzer** (bubble or
   bar style, mono or stereo), a stereo **vectorscope/goniometer**, a
   phase **correlation meter**, and a peak **level meter** are shown
@@ -288,6 +299,42 @@ button opens a separate window recording every such hot change to the
 ensemble as it happens - services or sub-channels appearing/disappearing,
 label changes, protection/bit rate changes, etc. - which is otherwise
 easy to miss on a live mux.
+
+
+### SPI (Service and Programme Information)
+
+When the ensemble's FIG 0/13 signals a data service carrying the EPG
+user application (ETSI TS 102 371 clause 6.2), EDIScope automatically
+locks onto its MSC packet-mode sub-channel, reassembles the underlying
+MOT Directory-mode carousel (ETSI EN 301 234 clause 7.2) and decodes
+whichever SPI binary objects (ETSI TS 102 371 clause 5 / ETSI TS 102
+818) it finds inside - no action required from you.
+
+Clicking "SPI" opens a window with four tabs:
+
+* **Services** - a grid of cards, one per service known to the SPI
+  Service Information (SI) document: its name(s), the DAB bearer it
+  refers to, and any logos (shown once the corresponding image object
+  has itself been fully received from the same carousel).
+* **Programme** - a per-service day timeline built from that service's
+  own Programme Information (PI) schedule object(s) - one exists per
+  service per day - picked from a drop-down.
+* **Groupes** - a grid of cards, one per programme group described by
+  the ensemble's Group Information (GI) document (series, shows,
+  magazines, etc.).
+* **XML** - a reconstruction, as readable XML, of whichever of the
+  three document types above you pick from a drop-down - not the
+  original wire bytes (a proprietary binary tree, not XML) but a
+  faithful rendering of everything the decoder extracted from them.
+
+The main "Services details" table also gains two columns, "S" and "P",
+marking with a checkmark whether SPI currently has, respectively,
+Service Information or at least one day of Programme Information for
+that row's service.
+
+Compressed MOT directories (data group type 7) are not supported, as
+ETSI TS 102 371 forbids a mux from using them for SPI in the first
+place.
 
 
 ### Date/Time
@@ -541,8 +588,10 @@ EDIScope implements (at least partly) the following DAB standards:
 
 ### Data applications
 * ETSI TS 102 980 (Dynamic Label Plus)
-* ETSI EN 301 234 (MOT)
+* ETSI EN 301 234 (MOT, including Directory mode, clause 7.2)
 * ETSI TS 101 499 (MOT Slideshow)
+* ETSI TS 102 371 (SPI - transport, including FIG 0/13 EPG signalling)
+* ETSI TS 102 818 (SPI - XML Schema/content model)
 
 
 ## License
