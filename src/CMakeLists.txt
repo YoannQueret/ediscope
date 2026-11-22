@@ -29,12 +29,15 @@ set(ediscope_gtk_sources
     msc_packet_demux.cpp
     mot_directory_decoder.cpp
     spi_decoder.cpp
+    xml_tree.cpp
+    radiodns.cpp
     ediscope_gtk.cpp
     ediscope_gtk_dl_plus.cpp
     ediscope_gtk_sls.cpp
     ediscope_gtk_cu_bar.cpp
     ediscope_gtk_logs.cpp
     ediscope_gtk_spi.cpp
+    ediscope_gtk_rdns.cpp
     ediscope_gtk_level_meter.cpp
     ediscope_gtk_spectrum.cpp
     ediscope_gtk_stereometer.cpp
@@ -64,7 +67,8 @@ install(TARGETS ediscope DESTINATION bin)
 # ediscope_gtk
 if(GTKMM_FOUND)
     add_executable(ediscope_gtk ${ediscope_sources} ${ediscope_gtk_sources})
-    target_link_libraries(ediscope_gtk ${common_link_list} ${GTKMM_LIBRARIES})
+    # resolv: res_query()/ns_*() used by radiodns.cpp for raw CNAME/SRV DNS record lookups
+    target_link_libraries(ediscope_gtk ${common_link_list} ${GTKMM_LIBRARIES} resolv)
     install(TARGETS ediscope_gtk DESTINATION bin)
 
     # Also register a desktop launcher + icon for the current user right after every build (not

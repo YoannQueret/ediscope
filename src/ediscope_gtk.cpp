@@ -265,6 +265,12 @@ EDIScopeGTK::EDIScopeGTK(EDIScopeGTKOptions options) : combo_network_uri(true) {
 		tglbtn_spi.set_active(false);
 		return true;
 	});
+	rdns_window.set_transient_for(*this);
+	rdns_window.signal_delete_event().connect([this](GdkEventAny*) -> bool {
+		tglbtn_rdns.set_active(false);
+		return true;
+	});
+	rdns_window.SetTestRequestedSlot([this](int sid, int scids, int ecc, int eid) {StartRDNSTest(sid, scids, ecc, eid);});
 
 	ensemble_update_progress.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::EnsembleUpdateProgressEmitted));
 	ensemble_change_format.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::EnsembleChangeFormatEmitted));
@@ -285,6 +291,7 @@ EDIScopeGTK::EDIScopeGTK(EDIScopeGTKOptions options) : combo_network_uri(true) {
 	spi_logo_updated.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::SPILogoUpdatedEmitted));
 	spi_schedule_updated.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::SPIScheduleUpdatedEmitted));
 	spi_group_info_updated.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::SPIGroupInfoUpdatedEmitted));
+	rdns_result_ready.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::RDNSResultReadyEmitted));
 	fic_log_message.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::FICLogMessageEmitted));
 	pad_change_dynamic_label.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::PADChangeDynamicLabelEmitted));
 	pad_change_slide.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::PADChangeSlideEmitted));
@@ -451,17 +458,31 @@ void EDIScopeGTK::RenderServiceDetailCell(Gtk::CellRenderer* renderer, const Gtk
 			}
 		}
 		break;
+	case 15: {	// R - last known RadioDNS (ETSI TS 103 270) resolution outcome, if ever tested
+		if(service.sid != LISTED_SERVICE::sid_none) {
+			int scids = service.IsPrimary() ? 0 : service.scids;
+			std::map<std::pair<int,int>,RDNS_RESULT>::const_iterator it = rdns_results.find(std::make_pair(service.sid, scids));
+			if(it != rdns_results.end())
+				text = it->second.FullyResolved() ? "\xE2\x9C\x93" : "\xE2\x9C\x97";	// U+2713 CHECK MARK / U+2717 BALLOT X
+		}
+		break; }
 	}
 
 	text_renderer->property_text() = text;
-	if(column_id == 13 || column_id == 14)
+	if(column_id == 13 || column_id == 14 || column_id == 15)
 		text_renderer->property_xalign() = 0.5;
 
 	// not a playable service - de-emphasize the whole row instead of just leaving cells blank
 	text_renderer->property_style() = service.is_audio ? Pango::STYLE_NORMAL : Pango::STYLE_ITALIC;
-	text_renderer->property_foreground_set() = !service.is_audio;
+
+	std::string foreground;
 	if(!service.is_audio)
-		text_renderer->property_foreground() = "grey";
+		foreground = "grey";
+	else if(column_id == 15 && !text.empty())
+		foreground = (text == "\xE2\x9C\x93") ? "#2a8f3f" : "#c0392b";
+	text_renderer->property_foreground_set() = !foreground.empty();
+	if(!foreground.empty())
+		text_renderer->property_foreground() = foreground;
 }
 
 bool EDIScopeGTK::on_services_table_query_tooltip(int x, int y, bool keyboard_tooltip, const Glib::RefPtr<Gtk::Tooltip>& tooltip) {
@@ -632,8 +653,8 @@ void EDIScopeGTK::InitWidgets() {
 		return ((LISTED_SERVICE) (*model->get_iter(path))[services_table_cols.col_service]).is_audio;
 	});
 
-	static const char* services_table_column_titles[] =     {"SubChId", "SID", "ECC", "Label", "Short label", "CUs", "Protection", "Bit rate", "Format", "Samplerate", "Audio", "Language", "PTY", "S", "P"};
-	static const int services_table_column_min_widths[] =   {      60,    50,     50,    100,            80,     90,          80,         70,      110,           80,      70,         90,  180,   30,  30};
+	static const char* services_table_column_titles[] =     {"SubChId", "SID", "ECC", "Label", "Short label", "CUs", "Protection", "Bit rate", "Format", "Samplerate", "Audio", "Language", "PTY", "S", "P", "R"};
+	static const int services_table_column_min_widths[] =   {      60,    50,     50,    100,            80,     90,          80,         70,      110,           80,      70,         90,  180,   30,  30,  30};
 	int services_table_min_width = 0;
 	for(size_t i = 0; i < sizeof(services_table_column_titles) / sizeof(services_table_column_titles[0]); i++) {
 		Gtk::CellRendererText *renderer = Gtk::manage(new Gtk::CellRendererText());
@@ -649,18 +670,31 @@ void EDIScopeGTK::InitWidgets() {
 		if(std::string(services_table_column_titles[i]) == "PTY")
 			renderer->property_width_chars() = 21 + 3;
 
-		// "S"/"P" (single checkmark glyph each) must match exactly - plain min_width alone still
-		// lets GTK's default autosizing grow each one independently to its own natural content
-		// width, which doesn't guarantee they end up equal
-		if(std::string(services_table_column_titles[i]) == "S" || std::string(services_table_column_titles[i]) == "P") {
+		// "S"/"P"/"R" (single checkmark/cross glyph each) must match exactly - plain min_width
+		// alone still lets GTK's default autosizing grow each one independently to its own
+		// natural content width, which doesn't guarantee they end up equal
+		std::string column_title = services_table_column_titles[i];
+		if(column_title == "S" || column_title == "P" || column_title == "R") {
 			col->set_sizing(Gtk::TREE_VIEW_COLUMN_FIXED);
 			col->set_fixed_width(services_table_column_min_widths[i]);
+
+			// a column header has no tooltip of its own - give it one via a custom header widget
+			// (a plain label standing in for the title GTK would otherwise have drawn itself)
+			static const std::map<std::string,std::string> column_tooltips = {
+				{"S", "SPI Service Informations"},
+				{"P", "SPI Programme Informations"},
+				{"R", "RadioDNS"},
+			};
+			Gtk::Label *header_label = Gtk::manage(new Gtk::Label(column_title));
+			header_label->set_tooltip_text(column_tooltips.at(column_title));
+			header_label->show();
+			col->set_widget(*header_label);
 		}
 	}
 
 	// trailing dummy column, title-less and empty: absorbs whatever leftover width GTK would
-	// otherwise hand to the last real column ("P") despite its own set_expand(false), so S/P stay
-	// exactly as wide as set_fixed_width() says regardless of how wide the view ends up being
+	// otherwise hand to the last real column ("R") despite its own set_expand(false), so S/P/R
+	// stay exactly as wide as set_fixed_width() says regardless of how wide the view ends up being
 	{
 		Gtk::CellRendererText *renderer = Gtk::manage(new Gtk::CellRendererText());
 		int col_index = services_table.append_column("", *renderer) - 1;
@@ -719,6 +753,12 @@ void EDIScopeGTK::InitWidgets() {
 	tglbtn_spi.set_tooltip_text("Service and Programme Information (ETSI TS 102 371/102 818), if the ensemble carries any");
 	tglbtn_spi.set_halign(Gtk::ALIGN_START);
 	tglbtn_spi.set_margin_top(10);
+
+	tglbtn_rdns.set_label("rDNS");
+	tglbtn_rdns.signal_clicked().connect(sigc::mem_fun(*this, &EDIScopeGTK::on_tglbtn_rdns));
+	tglbtn_rdns.set_tooltip_text("RadioDNS (ETSI TS 103 270) resolution for the ensemble's services - trace where it works/blocks");
+	tglbtn_rdns.set_halign(Gtk::ALIGN_START);
+	tglbtn_rdns.set_margin_top(10);
 
 	tglbtn_mute.set_image_from_icon_name("audio-volume-muted");
 	tglbtn_mute.signal_clicked().connect(sigc::mem_fun(*this, &EDIScopeGTK::on_tglbtn_mute));
@@ -845,7 +885,8 @@ void EDIScopeGTK::InitWidgets() {
 	header_grid.attach_next_to(frame_label_edi_delay, frame_label_datetime, Gtk::POS_RIGHT, 1, 2);
 	header_grid.attach_next_to(tglbtn_logs, frame_label_edi_delay, Gtk::POS_RIGHT, 1, 1);
 	header_grid.attach_next_to(tglbtn_spi, tglbtn_logs, Gtk::POS_RIGHT, 1, 1);
-	header_grid.attach_next_to(tglbtn_record, tglbtn_spi, Gtk::POS_RIGHT, 1, 1);
+	header_grid.attach_next_to(tglbtn_rdns, tglbtn_spi, Gtk::POS_RIGHT, 1, 1);
+	header_grid.attach_next_to(tglbtn_record, tglbtn_rdns, Gtk::POS_RIGHT, 1, 1);
 	header_grid.attach_next_to(label_record, tglbtn_record, Gtk::POS_RIGHT, 3, 1);
 	header_grid.attach_next_to(tglbtn_mute, label_record, Gtk::POS_RIGHT, 1, 1);
 	header_grid.attach_next_to(vlmbtn, tglbtn_mute, Gtk::POS_RIGHT, 1, 1);
@@ -1194,6 +1235,16 @@ void EDIScopeGTK::on_tglbtn_spi() {
 	}
 }
 
+void EDIScopeGTK::on_tglbtn_rdns() {
+	if(tglbtn_rdns.get_active()) {
+		rdns_window.AlignToParent();
+		rdns_window.SetServices(BuildRDNSServiceList());
+		rdns_window.show();
+	} else {
+		rdns_window.hide();
+	}
+}
+
 bool EDIScopeGTK::on_window_delete_event(GdkEventAny* /*any_event*/) {
 	// prevent exit while recording
 	if(tglbtn_record.get_active()) {
@@ -1425,6 +1476,7 @@ void EDIScopeGTK::FICChangeEnsembleEmitted() {
 //	fprintf(stderr, "### FICChangeEnsembleEmitted\n");
 
 	ensemble = fic_change_ensemble.Pop();
+	RescanRDNSServices();	// the ensemble's ECC (hence every service's GCC) may have just changed
 
 	std::string charset_name;
 	std::string label_plain = FICDecoder::ConvertLabelToUTF8(ensemble.label, &charset_name);
@@ -1500,6 +1552,15 @@ void EDIScopeGTK::FICChangeServiceEmitted() {
 
 	RebuildDataSubchannelRows();
 	UpdateCUBar();
+
+	if(new_service.is_audio) {
+		int test_scids = new_service.IsPrimary() ? 0 : new_service.scids;
+		int test_ecc = new_service.ecc != LISTED_SERVICE::ecc_none ? new_service.ecc : ensemble.ecc;
+		MaybeStartRDNSTest(new_service.sid, test_scids, test_ecc, ensemble.eid);
+	}
+
+	if(rdns_window.get_visible())
+		rdns_window.SetServices(BuildRDNSServiceList());
 }
 
 void EDIScopeGTK::FICRemoveServiceEmitted() {
@@ -1525,6 +1586,15 @@ void EDIScopeGTK::FICRemoveServiceEmitted() {
 
 	RebuildDataSubchannelRows();
 	UpdateCUBar();
+
+	{
+		std::pair<int,int> key(id.first, id.second == LISTED_SERVICE::scids_none ? 0 : id.second);
+		rdns_results.erase(key);
+		rdns_tested_params.erase(key);
+	}
+
+	if(rdns_window.get_visible())
+		rdns_window.SetServices(BuildRDNSServiceList());
 }
 
 void EDIScopeGTK::FICChangeSubchannelEmitted() {
@@ -1704,6 +1774,80 @@ void EDIScopeGTK::FICRemoveSPIServiceEmitted() {
 		StopSPIService();
 }
 
+std::vector<EDIScopeGTKRDNSWindow::SERVICE_ENTRY> EDIScopeGTK::BuildRDNSServiceList() {
+	std::vector<EDIScopeGTKRDNSWindow::SERVICE_ENTRY> list;
+
+	for(const Gtk::TreeModel::Row& row : services_table_liststore->children()) {
+		const LISTED_SERVICE& service = (LISTED_SERVICE) row[services_table_cols.col_service];
+		if(!service.is_audio || service.sid == LISTED_SERVICE::sid_none)
+			continue;
+
+		EDIScopeGTKRDNSWindow::SERVICE_ENTRY entry;
+		entry.sid = service.sid;
+		entry.scids = service.IsPrimary() ? 0 : service.scids;
+		entry.ecc = service.ecc != LISTED_SERVICE::ecc_none ? service.ecc : ensemble.ecc;
+		entry.eid = ensemble.eid;
+
+		std::string label = FICDecoder::ConvertLabelToUTF8(service.label, nullptr);
+		if(service.multi_comps)
+			label = (!service.IsPrimary() ? "» " : "") + label + (service.IsPrimary() ? " »" : "");
+		entry.label = label;
+
+		list.push_back(entry);
+	}
+
+	return list;
+}
+
+void EDIScopeGTK::StartRDNSTest(int sid, int scids, int ecc, int eid) {
+	std::pair<int,int> key(sid, scids);
+	if(rdns_pending.find(key) != rdns_pending.end())
+		return;
+	rdns_pending.insert(key);
+	rdns_tested_params[key] = std::make_pair(ecc, eid);
+
+	// audio services only (see BuildRDNSServiceList()) - always a 16-bit SId
+	std::thread([this, sid, scids, ecc, eid]() {
+		RDNS_RESULT result = RadioDNSResolver::Resolve(ecc, eid, (uint32_t) sid, false, scids);
+		rdns_result_ready.PushAndEmit(RDNS_RESULT_READY{sid, scids, result});
+	}).detach();
+}
+
+void EDIScopeGTK::MaybeStartRDNSTest(int sid, int scids, int ecc, int eid) {
+	if(ecc == FIC_ENSEMBLE::ecc_none || sid == LISTED_SERVICE::sid_none)
+		return;
+
+	std::pair<int,int> key(sid, scids);
+	if(rdns_pending.find(key) != rdns_pending.end())
+		return;
+
+	// already (being) tested with these exact broadcast parameters - a hot reconfiguration that
+	// actually changes the SId gives a different key above, and one that changes the ensemble's
+	// ECC changes the (ecc,eid) pair here, so either kind naturally falls through to a fresh test
+	std::map<std::pair<int,int>,std::pair<int,int>>::const_iterator it = rdns_tested_params.find(key);
+	if(it != rdns_tested_params.end() && it->second == std::make_pair(ecc, eid))
+		return;
+
+	StartRDNSTest(sid, scids, ecc, eid);
+}
+
+void EDIScopeGTK::RescanRDNSServices() {
+	for(const EDIScopeGTKRDNSWindow::SERVICE_ENTRY& entry : BuildRDNSServiceList())
+		MaybeStartRDNSTest(entry.sid, entry.scids, entry.ecc, entry.eid);
+}
+
+void EDIScopeGTK::RDNSResultReadyEmitted() {
+	RDNS_RESULT_READY ready = rdns_result_ready.Pop();
+	std::pair<int,int> key(ready.sid, ready.scids);
+	rdns_results[key] = ready.result;
+	rdns_pending.erase(key);
+
+	if(rdns_window.get_visible())
+		rdns_window.UpdateResult(ready.sid, ready.scids, ready.result);
+
+	services_table.queue_draw();	// refreshes the "R" column's checkmark/cross
+}
+
 void EDIScopeGTK::FICRemoveDataServiceSIDEmitted() {
 	known_data_service_sids.erase(fic_remove_data_service_sid.Pop());
 	RebuildDataSubchannelRows();
@@ -1830,6 +1974,10 @@ void EDIScopeGTK::StopEnsembleSource() {
 	EnsembleResetFIC();
 	services_table_liststore->clear();	// TODO: prevent on_services_table_selection_changed() being called for each deleted row
 	logs_window.Clear();
+	rdns_results.clear();
+	rdns_tested_params.clear();
+	rdns_pending.clear();
+	rdns_window.Clear();
 	known_subchannels.clear();
 	known_data_service_sids.clear();
 	UpdateCUBar();

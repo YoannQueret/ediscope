@@ -29,6 +29,7 @@
 #include <list>
 #include <mutex>
 #include <queue>
+#include <set>
 #include <signal.h>
 #include <string>
 #include <thread>
@@ -53,6 +54,8 @@
 #include "mot_directory_decoder.h"
 #include "spi_decoder.h"
 #include "ediscope_gtk_spi.h"
+#include "radiodns.h"
+#include "ediscope_gtk_rdns.h"
 #include "tools.h"
 #include "version.h"
 
@@ -166,6 +169,7 @@ private:
 
 	EDIScopeGTKLogsWindow logs_window;
 	EDIScopeGTKSPIWindow spi_window;
+	EDIScopeGTKRDNSWindow rdns_window;
 
 	EnsembleSource *ensemble_source;
 	std::thread ensemble_source_thread;
@@ -278,6 +282,7 @@ private:
 
 	Gtk::ToggleButton tglbtn_logs;
 	Gtk::ToggleButton tglbtn_spi;
+	Gtk::ToggleButton tglbtn_rdns;
 	Gtk::ToggleButton tglbtn_mute;
 	Gtk::VolumeButton vlmbtn;
 
@@ -329,6 +334,7 @@ private:
 	void on_vlmbtn(double value);
 	void on_tglbtn_logs();
 	void on_tglbtn_spi();
+	void on_tglbtn_rdns();
 	void on_services_table_selection_changed();
 	void on_cu_bar_service_clicked(uint16_t sid, int scids);
 	bool on_window_delete_event(GdkEventAny* any_event);
@@ -422,6 +428,25 @@ private:
 	GTKDispatcherQueue<int> fic_remove_spi_service;
 	void FICRemoveSPIService(int subchid) {fic_remove_spi_service.PushAndEmit(subchid);}
 	void FICRemoveSPIServiceEmitted();
+
+	// RadioDNS (ETSI TS 103 270) resolution, as shown in rdns_window - kept here (not just inside
+	// rdns_window) so it survives the window being hidden/shown again, and so the services
+	// table's own "R" column can show the last known outcome even while the window is closed.
+	// Every audio service is tested automatically as soon as its broadcast parameters are known
+	// (see MaybeStartRDNSTest()/RescanRDNSServices()), not just on explicit user request - a hot
+	// mux reconfiguration that changes a service's SId (or the ensemble's ECC) naturally produces
+	// a new/changed key below, which re-triggers a fresh test for it. Resolution itself (DNS +
+	// HTTP I/O) runs on a short-lived detached thread per request
+	std::map<std::pair<int,int>,RDNS_RESULT> rdns_results;	// (SId, SCIdS) -> last known result
+	std::map<std::pair<int,int>,std::pair<int,int>> rdns_tested_params;	// (SId, SCIdS) -> (ECC, EId) it was last (re)tested with
+	std::set<std::pair<int,int>> rdns_pending;	// (SId, SCIdS) currently being tested
+	struct RDNS_RESULT_READY {int sid; int scids; RDNS_RESULT result;};
+	GTKDispatcherQueue<RDNS_RESULT_READY> rdns_result_ready;
+	void StartRDNSTest(int sid, int scids, int ecc, int eid);
+	void MaybeStartRDNSTest(int sid, int scids, int ecc, int eid);
+	void RescanRDNSServices();
+	void RDNSResultReadyEmitted();
+	std::vector<EDIScopeGTKRDNSWindow::SERVICE_ENTRY> BuildRDNSServiceList();
 
 	void FICChangeUTCDateTime(const FIC_DAB_DT& utc_dt);
 

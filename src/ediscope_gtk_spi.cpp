@@ -415,16 +415,22 @@ Gtk::Widget *EDIScopeGTKSPIWindow::BuildServiceCard(const SPI_SERVICE& service, 
 	card->pack_start(*bearer_label, false, false);
 
 	if(!service.logos.empty()) {
-		Gtk::FlowBox *logos_flow = Gtk::manage(new Gtk::FlowBox());
-		logos_flow->set_selection_mode(Gtk::SELECTION_NONE);
-		logos_flow->set_row_spacing(6);
-		logos_flow->set_column_spacing(6);
-		logos_flow->set_margin_top(4);
+		// a plain fixed-column Gtk::Grid rather than a (nested) Gtk::FlowBox: FlowBox's
+		// height-for-width negotiation is unreliable once nested inside another container with a
+		// constrained width (a long-standing GTK3 limitation) and was under-reporting this row's
+		// height, making the logos stick out past the card's own bottom edge
+		Gtk::Grid *logos_grid = Gtk::manage(new Gtk::Grid());
+		logos_grid->set_row_spacing(6);
+		logos_grid->set_column_spacing(6);
+		logos_grid->set_margin_top(4);
 
-		for(const SPI_LOGO& logo : service.logos)
-			logos_flow->insert(*BuildLogoBox(logo, logo_data), -1);
+		int i = 0;
+		for(const SPI_LOGO& logo : service.logos) {
+			logos_grid->attach(*BuildLogoBox(logo, logo_data), i % logos_per_row, i / logos_per_row, 1, 1);
+			i++;
+		}
 
-		card->pack_start(*logos_flow, false, false);
+		card->pack_start(*logos_grid, false, false);
 	}
 
 	return card;
@@ -474,16 +480,19 @@ Gtk::Widget *EDIScopeGTKSPIWindow::BuildGroupCard(const SPI_PROGRAMME_GROUP& gro
 	}
 
 	if(!group.logos.empty()) {
-		Gtk::FlowBox *logos_flow = Gtk::manage(new Gtk::FlowBox());
-		logos_flow->set_selection_mode(Gtk::SELECTION_NONE);
-		logos_flow->set_row_spacing(6);
-		logos_flow->set_column_spacing(6);
-		logos_flow->set_margin_top(4);
+		// see BuildServiceCard() for why a Grid is used here instead of a (nested) FlowBox
+		Gtk::Grid *logos_grid = Gtk::manage(new Gtk::Grid());
+		logos_grid->set_row_spacing(6);
+		logos_grid->set_column_spacing(6);
+		logos_grid->set_margin_top(4);
 
-		for(const SPI_LOGO& logo : group.logos)
-			logos_flow->insert(*BuildLogoBox(logo, logo_data), -1);
+		int i = 0;
+		for(const SPI_LOGO& logo : group.logos) {
+			logos_grid->attach(*BuildLogoBox(logo, logo_data), i % logos_per_row, i / logos_per_row, 1, 1);
+			i++;
+		}
 
-		card->pack_start(*logos_flow, false, false);
+		card->pack_start(*logos_grid, false, false);
 	}
 
 	return card;
