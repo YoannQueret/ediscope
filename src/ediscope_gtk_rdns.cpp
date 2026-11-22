@@ -205,6 +205,24 @@ EDIScopeGTKRDNSWindow::EDIScopeGTKRDNSWindow() :
 	bearers_view.append_column("Type", bearers_cols.col_mime);
 	for(int i = 0; i < 4; i++)
 		bearers_view.get_column(i)->set_resizable(true);
+	bearers_view.add_events(Gdk::BUTTON_RELEASE_MASK);
+	// button-RELEASE, not press: TreeView's own internal click handling was observed to consume
+	// the first button-press-event of any click sequence entirely - our connected handler was
+	// never even invoked for it, only for the second press of what GDK then reports as a
+	// double-click. Release events aren't swallowed the same way
+	bearers_view.signal_button_release_event().connect([this](GdkEventButton *button_event) -> bool {
+		return on_bearers_view_button_release_event(button_event);
+	});
+
+	bearer_open_menu_item.set_label("Open");
+	bearer_open_menu_item.signal_activate().connect(sigc::mem_fun(*this, &EDIScopeGTKRDNSWindow::on_bearer_open_clicked));
+	bearer_context_menu.append(bearer_open_menu_item);
+
+	bearer_copy_menu_item.set_label("Copy");
+	bearer_copy_menu_item.signal_activate().connect(sigc::mem_fun(*this, &EDIScopeGTKRDNSWindow::on_bearer_copy_clicked));
+	bearer_context_menu.append(bearer_copy_menu_item);
+
+	bearer_context_menu.show_all();
 
 	bearers_scroll.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
 	bearers_scroll.add(bearers_view);
@@ -386,25 +404,40 @@ Glib::RefPtr<Gdk::Pixbuf> EDIScopeGTKRDNSWindow::ScaleToThumbnail(const Glib::Re
 	return pixbuf->scale_simple(new_w, new_h, Gdk::INTERP_BILINEAR);
 }
 
+bool EDIScopeGTKRDNSWindow::OnLogoQueryTooltip(int /*x*/, int /*y*/, bool /*keyboard_tooltip*/, const Glib::RefPtr<Gtk::Tooltip>& tooltip, Glib::RefPtr<Gdk::Pixbuf> full_pixbuf) {
+	Gtk::Image *full_image = Gtk::manage(new Gtk::Image(full_pixbuf));
+	tooltip->set_custom(*full_image);
+	return true;
+}
+
 Gtk::Widget *EDIScopeGTKRDNSWindow::BuildLogoBox(const RDNS_XML_LOGO& logo) {
 	Gtk::Box *box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 2));
 	box->get_style_context()->add_class("rdns-logo-box");
 
 	Gtk::Image *image = Gtk::manage(new Gtk::Image());
+	Glib::RefPtr<Gdk::Pixbuf> full_pixbuf;
 	if(!logo.data.empty()) {
 		try {
 			Glib::RefPtr<Gdk::PixbufLoader> loader = Gdk::PixbufLoader::create();
 			loader->write(&logo.data[0], logo.data.size());
 			loader->close();
-			image->set(ScaleToThumbnail(loader->get_pixbuf()));
+			full_pixbuf = loader->get_pixbuf();
 		} catch(const Glib::Error&) {
-			image->set_from_icon_name("image-missing", Gtk::ICON_SIZE_DIALOG);
+			// full_pixbuf stays null - falls through to the "image-missing" case below
 		}
+	}
+
+	if(full_pixbuf) {
+		image->set(ScaleToThumbnail(full_pixbuf));
+		// shows the logo at its real, undownscaled size on hover - same as the SPI window's own
+		// logos (see EDIScopeGTKSPIWindow::OnLogoQueryTooltip())
+		box->set_has_tooltip(true);
+		box->signal_query_tooltip().connect(sigc::bind(sigc::ptr_fun(&EDIScopeGTKRDNSWindow::OnLogoQueryTooltip), full_pixbuf));
 	} else {
 		image->set_from_icon_name("image-missing", Gtk::ICON_SIZE_DIALOG);
+		image->set_tooltip_text(logo.url);
 	}
 	image->set_halign(Gtk::ALIGN_CENTER);
-	image->set_tooltip_text(logo.url);
 
 	std::string caption = logo.type;
 	if(logo.width > 0 && logo.height > 0)
@@ -598,4 +631,54 @@ void EDIScopeGTKRDNSWindow::Clear() {
 	empty_label.show();
 	list_scroll.hide();
 	ShowDetailFor(-1, -1);
+}
+
+bool EDIScopeGTKRDNSWindow::IsStreamBearer(const std::string& id) {
+	// "dab:..."/"fm:..." (ETSI TS 103 270 bearerURIs) identify a broadcast bearer, not an address
+	// of anything this app could open or usefully copy as a link - an actual stream is the only
+	// kind of bearer id that is itself a fetchable URL
+	return id.compare(0, 7, "http://") == 0 || id.compare(0, 8, "https://") == 0;
+}
+
+bool EDIScopeGTKRDNSWindow::on_bearers_view_button_release_event(GdkEventButton *button_event) {
+	if(button_event->type != GDK_BUTTON_RELEASE || button_event->button != 3)
+		return false;
+
+	Gtk::TreeModel::Path path;
+	if(!bearers_view.get_path_at_pos((int) button_event->x, (int) button_event->y, path))
+		return false;
+
+	Gtk::TreeModel::iterator row_it = bearers_store->get_iter(path);
+	if(!row_it)
+		return false;
+
+	Glib::ustring id = (*row_it)[bearers_cols.col_id];
+	if(!IsStreamBearer(id))
+		return false;
+
+	context_bearer_url = id;
+	bearers_view.set_cursor(path);
+
+	// deferred to idle rather than popped up synchronously right here - avoids the menu's own
+	// pointer grab racing against whatever GTK is still doing to finish handling this same click
+	guint button = button_event->button;
+	guint32 event_time = button_event->time;
+	Glib::signal_idle().connect_once([this, button, event_time]() {
+		bearer_context_menu.popup(button, event_time);
+	});
+	return true;
+}
+
+void EDIScopeGTKRDNSWindow::on_bearer_open_clicked() {
+	if(context_bearer_url.empty())
+		return;
+
+	show_uri(context_bearer_url, GDK_CURRENT_TIME);
+}
+
+void EDIScopeGTKRDNSWindow::on_bearer_copy_clicked() {
+	if(context_bearer_url.empty())
+		return;
+
+	Gtk::Clipboard::get()->set_text(context_bearer_url);
 }

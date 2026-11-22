@@ -1239,6 +1239,11 @@ void EDIScopeGTK::on_tglbtn_rdns() {
 	if(tglbtn_rdns.get_active()) {
 		rdns_window.AlignToParent();
 		rdns_window.SetServices(BuildRDNSServiceList());
+		// services are tested automatically as soon as they're known (see MaybeStartRDNSTest()),
+		// independently of this window ever being open - replay whatever was already found out
+		// about them in the meantime, instead of showing blank statuses until the next hot change
+		for(const std::pair<const std::pair<int,int>,RDNS_RESULT>& kv : rdns_results)
+			rdns_window.UpdateResult(kv.first.first, kv.first.second, kv.second);
 		rdns_window.show();
 	} else {
 		rdns_window.hide();

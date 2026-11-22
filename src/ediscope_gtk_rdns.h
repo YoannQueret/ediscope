@@ -121,6 +121,13 @@ private:
 	BearersColumns bearers_cols;
 	Glib::RefPtr<Gtk::ListStore> bearers_store;
 
+	// right-click menu, shown only over a stream bearer (a plain http(s):// URL - not a "dab:"/
+	// "fm:" one, which aren't addresses of anything this app could open or usefully copy as a link)
+	Gtk::Menu bearer_context_menu;
+	Gtk::MenuItem bearer_open_menu_item;
+	Gtk::MenuItem bearer_copy_menu_item;
+	std::string context_bearer_url;
+
 	Gtk::ScrolledWindow xml_scroll;
 	Gtk::TextView xml_textview;
 	Glib::RefPtr<Gtk::TextBuffer> xml_buffer;
@@ -135,8 +142,13 @@ private:
 
 	static Glib::ustring ShortStatus(const RDNS_RESULT& result, Glib::ustring& color);
 	static Glib::RefPtr<Gdk::Pixbuf> ScaleToThumbnail(const Glib::RefPtr<Gdk::Pixbuf>& pixbuf);
+	static bool OnLogoQueryTooltip(int x, int y, bool keyboard_tooltip, const Glib::RefPtr<Gtk::Tooltip>& tooltip, Glib::RefPtr<Gdk::Pixbuf> full_pixbuf);
 	static Gtk::Widget *BuildLogoBox(const RDNS_XML_LOGO& logo);
+	static bool IsStreamBearer(const std::string& id);
 	void PopulateResultTabs(const RDNS_RESULT& result);
+	bool on_bearers_view_button_release_event(GdkEventButton *button_event);
+	void on_bearer_open_clicked();
+	void on_bearer_copy_clicked();
 	Gtk::TreeModel::iterator FindRow(int sid, int scids);
 	void RefreshRowStatus(const Gtk::TreeModel::iterator& row_it);
 	void ShowDetailFor(int sid, int scids);
