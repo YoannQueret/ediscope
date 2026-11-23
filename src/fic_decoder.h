@@ -296,6 +296,153 @@ struct LISTED_SERVICE {
 	}
 };
 
+
+// --- FIC_LINKED_SERVICE / FIC_SERVICE_LINKING_SET -----------------------------------------------------------------
+// one "linkage set" (ETSI EN 300 401 clause 8.1.15, FIG 0/6): a group of services that either
+// carry the same primary service component (hard link) or are editorially related (soft link),
+// possibly on DAB, FM (RDS), DRM or AMSS. Used for "service following" (see ETSI TS 103 176): if
+// this ensemble/service is lost, a receiver can retune to another member of the same set
+struct FIC_LINKED_SERVICE {
+	// what "id" actually identifies, per the FIG 0/6 IdLQ field - never applies to the set's own
+	// key_service_sid, which is always a plain DAB SId of a service in this ensemble
+	enum TYPE {
+		DAB_SID,		// id = 16-bit DAB SId (same country if the set is national, ecc gives the country if international)
+		RDS_PI,			// id = RDS PI-code (FM alternative)
+		DRM_AMSS_ID,	// id = DRM or AMSS Service Identifier, least significant 2 bytes only
+		DATA_SID,		// id = 32-bit data service SId (P/D=1 linkage set - rare)
+	};
+
+	TYPE type;
+	uint32_t id;
+	int ecc;	// only ever set for DAB_SID in an international (ILS) set - ecc_none otherwise
+
+	static const int ecc_none = -1;
+	FIC_LINKED_SERVICE() : type(DAB_SID), id(0), ecc(ecc_none) {}
+
+	bool operator==(const FIC_LINKED_SERVICE& o) const {return type == o.type && id == o.id && ecc == o.ecc;}
+	bool operator!=(const FIC_LINKED_SERVICE& o) const {return !(*this == o);}
+};
+
+struct FIC_SERVICE_LINKING_SET {
+	int lsn;				// Linkage Set Number (12 bits) - lsn_none if not yet known
+	bool active;			// LA - active vs. merely potential/deactivated link
+	bool hard_link;			// S/H - hard (same programme) vs. soft (related programme) link
+	bool international;	// ILS - national vs. international (or DRM/AMSS) link
+	bool is_data;			// P/D - a data-service linkage set (rare) rather than a programme one
+
+	// the first service of the set, always a DAB SId carried in this very ensemble - only given
+	// once, in the FIG that starts this key's database (C/N=0); sid_none if not seen yet (e.g.
+	// just tuned in, mid-cycle - self-heals once that FIG's own repeat comes around)
+	int key_service_sid;
+
+	std::vector<FIC_LINKED_SERVICE> members;	// every other service in the set
+
+	static const int lsn_none = 0;	// LSN=0 is reserved/unused by the spec
+	bool IsNone() const {return lsn == lsn_none;}
+
+	static const int sid_none = -1;
+
+	FIC_SERVICE_LINKING_SET() :
+		lsn(lsn_none),
+		active(false),
+		hard_link(false),
+		international(false),
+		is_data(false),
+		key_service_sid(sid_none)
+	{}
+
+	bool operator==(const FIC_SERVICE_LINKING_SET& o) const {
+		return lsn == o.lsn && active == o.active && hard_link == o.hard_link && international == o.international &&
+				is_data == o.is_data && key_service_sid == o.key_service_sid && members == o.members;
+	}
+	bool operator!=(const FIC_SERVICE_LINKING_SET& o) const {return !(*this == o);}
+};
+
+typedef std::map<int,FIC_SERVICE_LINKING_SET> fic_service_linking_sets_t;	// key: FICDecoder::ServiceLinkingKey()
+
+
+// --- FIC_FREQUENCY_INFO -----------------------------------------------------------------
+// one Frequency Information database entry (ETSI EN 300 401 clause 8.1.8, FIG 0/21): every
+// alternative frequency known for one DAB ensemble, FM/RDS, DRM or AMSS source, keyed by its own
+// Id (EId/PI-code/DRM or AMSS Id) and Range&Modulation (R&M)
+struct FIC_FI_DAB_FREQ {
+	bool geographically_adjacent;
+	bool transmission_mode_1_signalled;	// mode I explicitly signalled, vs. "no mode signalled"
+	double freq_khz;	// centre carrier frequency: Freq a * 16 kHz
+
+	bool operator==(const FIC_FI_DAB_FREQ& o) const {return geographically_adjacent == o.geographically_adjacent && transmission_mode_1_signalled == o.transmission_mode_1_signalled && freq_khz == o.freq_khz;}
+	bool operator!=(const FIC_FI_DAB_FREQ& o) const {return !(*this == o);}
+};
+
+struct FIC_FI_FM_FREQ {
+	double freq_mhz;	// 87,5 MHz + Freq b * 100 kHz
+
+	bool operator==(const FIC_FI_FM_FREQ& o) const {return freq_mhz == o.freq_mhz;}
+	bool operator!=(const FIC_FI_FM_FREQ& o) const {return !(*this == o);}
+};
+
+struct FIC_FI_OTHER_FREQ {	// DRM or AMSS
+	int id_msb;			// "Id field 2" - most significant byte of the DRM/AMSS Service Identifier
+	double freq_khz;
+
+	bool operator==(const FIC_FI_OTHER_FREQ& o) const {return id_msb == o.id_msb && freq_khz == o.freq_khz;}
+	bool operator!=(const FIC_FI_OTHER_FREQ& o) const {return !(*this == o);}
+};
+
+struct FIC_FREQUENCY_INFO {
+	enum RANGE {
+		DAB_ENSEMBLE = 0x0,
+		DRM = 0x6,
+		FM_RDS = 0x8,
+		AMSS = 0xE,
+	};
+
+	bool other_ensemble;	// OE - applies to the tuned ensemble/a service on it (false), or another one (true)
+	RANGE range;
+	uint32_t id;			// EId / RDS PI-code / DRM or AMSS Id (2 LSBytes) - meaning depends on range
+
+	// meaning depends on range: for DAB, whether continuous output across the alternative is
+	// possible; for DRM/FM/AMSS, whether there's a compensating delay for DAB's own decoding delay
+	bool continuity;
+
+	std::vector<FIC_FI_DAB_FREQ> dab_freqs;		// populated iff range == DAB_ENSEMBLE
+	std::vector<FIC_FI_FM_FREQ> fm_freqs;			// iff range == FM_RDS
+	std::vector<FIC_FI_OTHER_FREQ> other_freqs;	// iff range == DRM or AMSS
+
+	FIC_FREQUENCY_INFO() : other_ensemble(false), range(DAB_ENSEMBLE), id(0), continuity(false) {}
+
+	bool operator==(const FIC_FREQUENCY_INFO& o) const {
+		return other_ensemble == o.other_ensemble && range == o.range && id == o.id && continuity == o.continuity &&
+				dab_freqs == o.dab_freqs && fm_freqs == o.fm_freqs && other_freqs == o.other_freqs;
+	}
+	bool operator!=(const FIC_FREQUENCY_INFO& o) const {return !(*this == o);}
+};
+
+typedef std::map<int,FIC_FREQUENCY_INFO> fic_frequency_infos_t;	// key: FICDecoder::FrequencyInfoKey()
+
+
+// --- FIC_OE_SERVICE -----------------------------------------------------------------
+// one OE Services database entry (ETSI EN 300 401 clause 8.1.10, FIG 0/24): which ensemble(s)
+// carry a given service - the missing link to resolve a FIG 0/6 DAB_SID member (identified only
+// by SId) to an actual EId, and from there to its frequency via FIG 0/21
+struct FIC_OE_SERVICE {
+	uint32_t sid;
+	bool is_data;				// P/D
+	bool not_in_tuned_ensemble;	// OE - whether this SId is (not) carried in the tuned ensemble
+	int ca_id;					// CAId - 0 if no Access Control System is used for the service
+	std::vector<int> eids;		// every ensemble known to carry this service
+
+	FIC_OE_SERVICE() : sid(0), is_data(false), not_in_tuned_ensemble(false), ca_id(0) {}
+
+	bool operator==(const FIC_OE_SERVICE& o) const {
+		return sid == o.sid && is_data == o.is_data && not_in_tuned_ensemble == o.not_in_tuned_ensemble &&
+				ca_id == o.ca_id && eids == o.eids;
+	}
+	bool operator!=(const FIC_OE_SERVICE& o) const {return !(*this == o);}
+};
+
+typedef std::map<int64_t,FIC_OE_SERVICE> fic_oe_services_t;	// key: FICDecoder::OEServiceKey()
+
 typedef std::map<uint16_t, FIC_SERVICE> fic_services_t;
 typedef std::map<int, FIC_SUBCHANNEL> fic_subchannels_t;
 
@@ -332,6 +479,21 @@ public:
 	virtual void FICChangeSPIService(int /*subchid*/, int /*address*/, bool /*fec*/) {}
 	virtual void FICRemoveSPIService(int /*subchid*/) {}
 
+	// a Service linking set (FIG 0/6, ETSI EN 300 401 clause 8.1.15) was created or changed - key
+	// is FICDecoder::ServiceLinkingKey(), uniquely identifying the set (its own database key: P/D
+	// + S/H + ILS + LSN)
+	virtual void FICChangeServiceLinking(int /*key*/, const FIC_SERVICE_LINKING_SET& /*set*/) {}
+
+	// a Frequency Information database entry (FIG 0/21, ETSI EN 300 401 clause 8.1.8) was created
+	// or changed - key is FICDecoder::FrequencyInfoKey(), uniquely identifying the entry (its own
+	// database key: OE + Id + R&M)
+	virtual void FICChangeFrequencyInfo(int /*key*/, const FIC_FREQUENCY_INFO& /*info*/) {}
+
+	// an OE Services database entry (FIG 0/24, ETSI EN 300 401 clause 8.1.10) was created or
+	// changed - key is FICDecoder::OEServiceKey(), uniquely identifying the entry (its own
+	// database key: OE + P/D + SId)
+	virtual void FICChangeOEService(int64_t /*key*/, const FIC_OE_SERVICE& /*service*/) {}
+
 	// human-readable record of a hot change on the ensemble (EId, SId, label, short label, protection, bit rate, ...)
 	virtual void FICLogMessage(const std::string& /*message*/) {}
 
@@ -363,6 +525,9 @@ private:
 	void ProcessFIG0_17(const uint8_t *data, size_t len);
 	void ProcessFIG0_18(const uint8_t *data, size_t len);
 	void ProcessFIG0_19(const uint8_t *data, size_t len);
+	void ProcessFIG0_6(const uint8_t *data, size_t len, bool pd, bool first_in_db);
+	void ProcessFIG0_21(const uint8_t *data, size_t len, bool oe);
+	void ProcessFIG0_24(const uint8_t *data, size_t len, bool oe, bool pd);
 
 	void ProcessFIG1(const uint8_t *data, size_t len);
 	void ProcessFIG1_0(uint16_t eid, const FIC_LABEL& label);
@@ -398,6 +563,10 @@ private:
 	std::map<int,int> spi_subchannels;	// currently confirmed SPI (FIG 0/13 UAtype EPG) sub-channels: SubChId -> packet Address
 	std::map<int,bool> packet_mode_fec;	// from FIG 0/14: SubChId -> FEC scheme applied (EN 300 401 clause 5.3.5)
 
+	fic_service_linking_sets_t service_linking_sets;	// from FIG 0/6
+	fic_frequency_infos_t frequency_infos;				// from FIG 0/21
+	fic_oe_services_t oe_services;						// from FIG 0/24
+
 	void RemoveService(const FIC_SERVICE& service);
 	void PruneStaleSubchannels();
 
@@ -430,6 +599,12 @@ public:
 	void Process(const uint8_t *data, size_t len);
 	void Reset();
 	void CheckServiceTimeouts();
+
+	// database keys for fic_service_linking_sets_t/fic_frequency_infos_t - also used by consumers
+	// (e.g. the GTK Links window) to cross-reference a FIG 0/6 member against FIG 0/21 entries
+	static int ServiceLinkingKey(bool pd, bool hard_link, bool international, int lsn);
+	static int FrequencyInfoKey(bool oe, uint32_t id, int rm);
+	static int64_t OEServiceKey(bool oe, bool pd, uint32_t sid);
 
 	static std::string ConvertLabelToUTF8(const FIC_LABEL& label, std::string* charset_name);
 	static std::string ConvertLanguageToString(const int value);

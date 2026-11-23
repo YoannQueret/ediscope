@@ -271,6 +271,11 @@ EDIScopeGTK::EDIScopeGTK(EDIScopeGTKOptions options) : combo_network_uri(true) {
 		return true;
 	});
 	rdns_window.SetTestRequestedSlot([this](int sid, int scids, int ecc, int eid) {StartRDNSTest(sid, scids, ecc, eid);});
+	links_window.set_transient_for(*this);
+	links_window.signal_delete_event().connect([this](GdkEventAny*) -> bool {
+		tglbtn_links.set_active(false);
+		return true;
+	});
 
 	ensemble_update_progress.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::EnsembleUpdateProgressEmitted));
 	ensemble_change_format.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::EnsembleChangeFormatEmitted));
@@ -292,6 +297,9 @@ EDIScopeGTK::EDIScopeGTK(EDIScopeGTKOptions options) : combo_network_uri(true) {
 	spi_schedule_updated.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::SPIScheduleUpdatedEmitted));
 	spi_group_info_updated.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::SPIGroupInfoUpdatedEmitted));
 	rdns_result_ready.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::RDNSResultReadyEmitted));
+	fic_change_service_linking.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::FICChangeServiceLinkingEmitted));
+	fic_change_frequency_info.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::FICChangeFrequencyInfoEmitted));
+	fic_change_oe_service.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::FICChangeOEServiceEmitted));
 	fic_log_message.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::FICLogMessageEmitted));
 	pad_change_dynamic_label.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::PADChangeDynamicLabelEmitted));
 	pad_change_slide.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::PADChangeSlideEmitted));
@@ -760,6 +768,12 @@ void EDIScopeGTK::InitWidgets() {
 	tglbtn_rdns.set_halign(Gtk::ALIGN_START);
 	tglbtn_rdns.set_margin_top(10);
 
+	tglbtn_links.set_label("Links");
+	tglbtn_links.signal_clicked().connect(sigc::mem_fun(*this, &EDIScopeGTK::on_tglbtn_links));
+	tglbtn_links.set_tooltip_text("Service linking and Frequency Information (ETSI EN 300 401 clauses 8.1.8/8.1.15), if the ensemble carries any");
+	tglbtn_links.set_halign(Gtk::ALIGN_START);
+	tglbtn_links.set_margin_top(10);
+
 	tglbtn_mute.set_image_from_icon_name("audio-volume-muted");
 	tglbtn_mute.signal_clicked().connect(sigc::mem_fun(*this, &EDIScopeGTK::on_tglbtn_mute));
 	tglbtn_mute.set_tooltip_text("Mute");
@@ -886,7 +900,8 @@ void EDIScopeGTK::InitWidgets() {
 	header_grid.attach_next_to(tglbtn_logs, frame_label_edi_delay, Gtk::POS_RIGHT, 1, 1);
 	header_grid.attach_next_to(tglbtn_spi, tglbtn_logs, Gtk::POS_RIGHT, 1, 1);
 	header_grid.attach_next_to(tglbtn_rdns, tglbtn_spi, Gtk::POS_RIGHT, 1, 1);
-	header_grid.attach_next_to(tglbtn_record, tglbtn_rdns, Gtk::POS_RIGHT, 1, 1);
+	header_grid.attach_next_to(tglbtn_links, tglbtn_rdns, Gtk::POS_RIGHT, 1, 1);
+	header_grid.attach_next_to(tglbtn_record, tglbtn_links, Gtk::POS_RIGHT, 1, 1);
 	header_grid.attach_next_to(label_record, tglbtn_record, Gtk::POS_RIGHT, 3, 1);
 	header_grid.attach_next_to(tglbtn_mute, label_record, Gtk::POS_RIGHT, 1, 1);
 	header_grid.attach_next_to(vlmbtn, tglbtn_mute, Gtk::POS_RIGHT, 1, 1);
@@ -1250,6 +1265,26 @@ void EDIScopeGTK::on_tglbtn_rdns() {
 	}
 }
 
+void EDIScopeGTK::on_tglbtn_links() {
+	if(tglbtn_links.get_active()) {
+		links_window.AlignToParent();
+		links_window.SetEnsembleEid(ensemble.eid);
+		links_window.SetServices(BuildLinksServiceList());
+		// Service linking sets and Frequency Information both get decoded as soon as they're seen
+		// on the FIC, independently of this window ever being open - replay whatever is already
+		// known instead of showing nothing until the next hot change
+		for(const fic_service_linking_sets_t::value_type& kv : service_linking_sets)
+			links_window.UpdateServiceLinking(kv.first, kv.second);
+		for(const fic_frequency_infos_t::value_type& kv : frequency_infos)
+			links_window.UpdateFrequencyInfo(kv.first, kv.second);
+		for(const fic_oe_services_t::value_type& kv : oe_services)
+			links_window.UpdateOEService(kv.first, kv.second);
+		links_window.show();
+	} else {
+		links_window.hide();
+	}
+}
+
 bool EDIScopeGTK::on_window_delete_event(GdkEventAny* /*any_event*/) {
 	// prevent exit while recording
 	if(tglbtn_record.get_active()) {
@@ -1482,6 +1517,8 @@ void EDIScopeGTK::FICChangeEnsembleEmitted() {
 
 	ensemble = fic_change_ensemble.Pop();
 	RescanRDNSServices();	// the ensemble's ECC (hence every service's GCC) may have just changed
+	if(links_window.get_visible())
+		links_window.SetEnsembleEid(ensemble.eid);
 
 	std::string charset_name;
 	std::string label_plain = FICDecoder::ConvertLabelToUTF8(ensemble.label, &charset_name);
@@ -1566,6 +1603,8 @@ void EDIScopeGTK::FICChangeServiceEmitted() {
 
 	if(rdns_window.get_visible())
 		rdns_window.SetServices(BuildRDNSServiceList());
+	if(links_window.get_visible())
+		links_window.SetServices(BuildLinksServiceList());
 }
 
 void EDIScopeGTK::FICRemoveServiceEmitted() {
@@ -1600,6 +1639,8 @@ void EDIScopeGTK::FICRemoveServiceEmitted() {
 
 	if(rdns_window.get_visible())
 		rdns_window.SetServices(BuildRDNSServiceList());
+	if(links_window.get_visible())
+		links_window.SetServices(BuildLinksServiceList());
 }
 
 void EDIScopeGTK::FICChangeSubchannelEmitted() {
@@ -1853,6 +1894,53 @@ void EDIScopeGTK::RDNSResultReadyEmitted() {
 	services_table.queue_draw();	// refreshes the "R" column's checkmark/cross
 }
 
+std::vector<EDIScopeGTKLinksWindow::SERVICE_ENTRY> EDIScopeGTK::BuildLinksServiceList() {
+	std::vector<EDIScopeGTKLinksWindow::SERVICE_ENTRY> list;
+
+	for(const Gtk::TreeModel::Row& row : services_table_liststore->children()) {
+		const LISTED_SERVICE& service = (LISTED_SERVICE) row[services_table_cols.col_service];
+		if(!service.is_audio || service.sid == LISTED_SERVICE::sid_none)
+			continue;
+
+		EDIScopeGTKLinksWindow::SERVICE_ENTRY entry;
+		entry.sid = service.sid;
+		entry.scids = service.IsPrimary() ? 0 : service.scids;
+
+		std::string label = FICDecoder::ConvertLabelToUTF8(service.label, nullptr);
+		if(service.multi_comps)
+			label = (!service.IsPrimary() ? "» " : "") + label + (service.IsPrimary() ? " »" : "");
+		entry.label = label;
+
+		list.push_back(entry);
+	}
+
+	return list;
+}
+
+void EDIScopeGTK::FICChangeServiceLinkingEmitted() {
+	SERVICE_LINKING_CHANGE change = fic_change_service_linking.Pop();
+	service_linking_sets[change.key] = change.set;
+
+	if(links_window.get_visible())
+		links_window.UpdateServiceLinking(change.key, change.set);
+}
+
+void EDIScopeGTK::FICChangeFrequencyInfoEmitted() {
+	FREQUENCY_INFO_CHANGE change = fic_change_frequency_info.Pop();
+	frequency_infos[change.key] = change.info;
+
+	if(links_window.get_visible())
+		links_window.UpdateFrequencyInfo(change.key, change.info);
+}
+
+void EDIScopeGTK::FICChangeOEServiceEmitted() {
+	OE_SERVICE_CHANGE change = fic_change_oe_service.Pop();
+	oe_services[change.key] = change.service;
+
+	if(links_window.get_visible())
+		links_window.UpdateOEService(change.key, change.service);
+}
+
 void EDIScopeGTK::FICRemoveDataServiceSIDEmitted() {
 	known_data_service_sids.erase(fic_remove_data_service_sid.Pop());
 	RebuildDataSubchannelRows();
@@ -1983,6 +2071,10 @@ void EDIScopeGTK::StopEnsembleSource() {
 	rdns_tested_params.clear();
 	rdns_pending.clear();
 	rdns_window.Clear();
+	service_linking_sets.clear();
+	frequency_infos.clear();
+	oe_services.clear();
+	links_window.Clear();
 	known_subchannels.clear();
 	known_data_service_sids.clear();
 	UpdateCUBar();

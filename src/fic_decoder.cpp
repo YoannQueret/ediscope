@@ -98,6 +98,27 @@ void FICDecoder::ProcessFIG0(const uint8_t *data, size_t len) {
 	data++;
 	len--;
 
+	// FIG 0/6 (service linking), FIG 0/21 (frequency information) and FIG 0/24 (OE Services) are
+	// all part of "service following" (see ETSI TS 103 176) and specifically need what the
+	// blanket check below discards for every other extension: 0/6 reuses C/N for database
+	// continuation (clause 5.2.2.1 SIV signalling - not current/next mux config) and never sets
+	// OE; 0/21 and 0/24 use OE to mean "this ensemble/service" vs. "another ensemble/service, or
+	// FM/AM/DRM", which is the whole point of them. All three are handled here, ahead of (and
+	// regardless of) the data-mode/cn/oe handling below that the remaining, MCI-flavoured
+	// extensions rely on
+	if(header.extension == 6) {
+		ProcessFIG0_6(data, len, header.pd, !header.cn);
+		return;
+	}
+	if(header.extension == 21) {
+		ProcessFIG0_21(data, len, header.oe);
+		return;
+	}
+	if(header.extension == 24) {
+		ProcessFIG0_24(data, len, header.oe, header.pd);
+		return;
+	}
+
 	// ignore next config/other ensembles
 	if(header.cn || header.oe)
 		return;
@@ -873,6 +894,301 @@ void FICDecoder::ProcessFIG0_19(const uint8_t *data, size_t len) {
 				if(s.cids.find(cid) != s.cids.cend())
 					UpdateService(s);
 			}
+		}
+	}
+}
+
+int FICDecoder::ServiceLinkingKey(bool pd, bool hard_link, bool international, int lsn) {
+	// ETSI EN 300 401 clause 8.1.15: "The database key comprises the OE and P/D flags (...) and
+	// the S/H, ILS, and LSN fields" - OE is always 0 for this extension (reserved), so left out
+	return (pd ? 0x8000 : 0) | (hard_link ? 0x4000 : 0) | (international ? 0x2000 : 0) | lsn;
+}
+
+void FICDecoder::ProcessFIG0_6(const uint8_t *data, size_t len, bool pd, bool first_in_db) {
+	// FIG 0/6 - Service linking information (ETSI EN 300 401 clause 8.1.15)
+
+	for(size_t offset = 0; offset + 2 <= len;) {
+		bool id_list_flag = data[offset] & 0x80;
+		bool la = data[offset] & 0x40;
+		bool sh = data[offset] & 0x20;
+		bool ils = data[offset] & 0x10;
+		int lsn = (data[offset] & 0x0F) << 8 | data[offset + 1];
+		offset += 2;
+
+		if(lsn == FIC_SERVICE_LINKING_SET::lsn_none)
+			continue;	// reserved LSN value - malformed, but offset is already past this entry's fixed header
+
+		int key = ServiceLinkingKey(pd, sh, ils, lsn);
+
+		if(!id_list_flag) {
+			// CEI ("Id List flag = 0"): this set's database changed - drop whatever was cached
+			// for it so it gets rebuilt cleanly from the next full (non-CEI) occurrence, instead
+			// of silently going stale
+			service_linking_sets.erase(key);
+			continue;
+		}
+
+		if(offset + 1 > len)
+			break;	// malformed - not enough room for the promised extra byte
+		int idlq = (data[offset] >> 5) & 0x03;
+		int number_of_ids = data[offset] & 0x0F;
+		offset++;
+
+		FIC_SERVICE_LINKING_SET new_set = service_linking_sets[key];	// starts default-constructed if new
+		new_set.lsn = lsn;
+		new_set.active = la;
+		new_set.hard_link = sh;
+		new_set.international = ils;
+		new_set.is_data = pd;
+		if(first_in_db)
+			new_set.members.clear();	// fresh start for this key - rebuild from here on
+
+		for(int i = 0; i < number_of_ids; i++) {
+			bool is_key_entry = first_in_db && i == 0;
+
+			if(!pd) {
+				int ecc = FIC_LINKED_SERVICE::ecc_none;
+				if(ils) {
+					if(offset + 1 > len)
+						break;
+					ecc = data[offset];
+					offset++;
+				}
+				if(offset + 2 > len)
+					break;
+				uint16_t id16 = data[offset] << 8 | data[offset + 1];
+				offset += 2;
+
+				if(is_key_entry) {
+					new_set.key_service_sid = id16;
+				} else {
+					FIC_LINKED_SERVICE entry;
+					entry.id = id16;
+					entry.ecc = ecc;
+					switch(idlq) {
+					case 0: entry.type = FIC_LINKED_SERVICE::DAB_SID; break;
+					case 1: entry.type = FIC_LINKED_SERVICE::RDS_PI; break;
+					default: entry.type = FIC_LINKED_SERVICE::DRM_AMSS_ID; break;	// "11" (and reserved "10")
+					}
+					new_set.members.push_back(entry);
+				}
+			} else {
+				if(offset + 4 > len)
+					break;
+				uint32_t id32 = (uint32_t) data[offset] << 24 | data[offset + 1] << 16 | data[offset + 2] << 8 | data[offset + 3];
+				offset += 4;
+
+				if(is_key_entry) {
+					new_set.key_service_sid = id32;
+				} else {
+					FIC_LINKED_SERVICE entry;
+					entry.type = FIC_LINKED_SERVICE::DATA_SID;
+					entry.id = id32;
+					new_set.members.push_back(entry);
+				}
+			}
+		}
+
+		FIC_SERVICE_LINKING_SET& current_set = service_linking_sets[key];
+		if(current_set != new_set) {
+			current_set = new_set;
+
+			fprintf(stderr, "FICDecoder: linkage set LSN 0x%03X (%s, %s%s): key service SId %s, %zu other member(s)\n",
+					current_set.lsn, current_set.active ? "active" : "inactive", current_set.hard_link ? "hard link" : "soft link",
+					current_set.international ? ", international" : "",
+					current_set.key_service_sid != FIC_SERVICE_LINKING_SET::sid_none ? StringTools::IntToHex(current_set.key_service_sid, 4).c_str() : "unknown",
+					current_set.members.size());
+			Log("Linkage set LSN " + StringTools::IntToHex(current_set.lsn, 3) + " (" + (current_set.active ? "active" : "inactive") + ", " +
+					(current_set.hard_link ? "hard link" : "soft link") + (current_set.international ? ", international" : "") + "): " +
+					std::to_string(current_set.members.size()) + " other member(s)");
+
+			observer->FICChangeServiceLinking(key, current_set);
+		}
+	}
+}
+
+int FICDecoder::FrequencyInfoKey(bool oe, uint32_t id, int rm) {
+	// ETSI EN 300 401 clause 8.1.8: "The database key comprises the OE and P/D flags (...) and
+	// the Rfa, Id field, and R&M fields" - P/D and Rfa are always 0 for this extension (reserved)
+	return (oe ? (1 << 20) : 0) | (int) (id << 4) | rm;
+}
+
+void FICDecoder::ProcessFIG0_21(const uint8_t *data, size_t len, bool oe) {
+	// FIG 0/21 - Frequency Information (ETSI EN 300 401 clause 8.1.8)
+
+	for(size_t group_offset = 0; group_offset + 2 <= len;) {
+		size_t length_of_fi_list = (data[group_offset] << 8 | data[group_offset + 1]) & 0x1F;
+		group_offset += 2;
+
+		size_t fi_list_end = group_offset + length_of_fi_list;
+		if(fi_list_end > len)
+			break;	// malformed
+
+		for(size_t offset = group_offset; offset + 3 <= fi_list_end;) {
+			uint16_t id_field = data[offset] << 8 | data[offset + 1];
+			int rm = (data[offset + 2] >> 4) & 0x0F;
+			bool continuity = data[offset + 2] & 0x08;
+			size_t length_of_freq_list = data[offset + 2] & 0x07;
+			offset += 3;
+
+			size_t freq_list_end = offset + length_of_freq_list;
+			if(freq_list_end > fi_list_end) {
+				offset = fi_list_end;	// malformed - can't trust the rest of this FI list either
+				break;
+			}
+
+			int key = FrequencyInfoKey(oe, id_field, rm);
+
+			if(length_of_freq_list == 0) {
+				// CEI ("Length of Freq list = 0"): this entry's database changed - drop whatever
+				// was cached for it so it gets rebuilt from the next full (non-CEI) occurrence
+				frequency_infos.erase(key);
+				offset = freq_list_end;
+				continue;
+			}
+
+			FIC_FREQUENCY_INFO new_info;
+			new_info.other_ensemble = oe;
+			new_info.id = id_field;
+			new_info.continuity = continuity;
+
+			switch(rm) {
+			case FIC_FREQUENCY_INFO::DAB_ENSEMBLE:
+				new_info.range = FIC_FREQUENCY_INFO::DAB_ENSEMBLE;
+				for(; offset + 3 <= freq_list_end; offset += 3) {
+					uint32_t combined = (uint32_t) data[offset] << 16 | data[offset + 1] << 8 | data[offset + 2];
+					int control = (combined >> 19) & 0x1F;
+
+					FIC_FI_DAB_FREQ f;
+					f.geographically_adjacent = !(control & 0x01);
+					f.transmission_mode_1_signalled = control & 0x02;
+					f.freq_khz = (combined & 0x7FFFF) * 16.0;
+					new_info.dab_freqs.push_back(f);
+				}
+				break;
+
+			case FIC_FREQUENCY_INFO::FM_RDS:
+				new_info.range = FIC_FREQUENCY_INFO::FM_RDS;
+				for(; offset + 1 <= freq_list_end; offset += 1) {
+					FIC_FI_FM_FREQ f;
+					f.freq_mhz = 87.5 + data[offset] * 0.1;
+					new_info.fm_freqs.push_back(f);
+				}
+				break;
+
+			case FIC_FREQUENCY_INFO::DRM:
+			case FIC_FREQUENCY_INFO::AMSS:
+				new_info.range = (FIC_FREQUENCY_INFO::RANGE) rm;
+				for(; offset + 3 <= freq_list_end; offset += 3) {
+					int id_msb = data[offset];
+					uint16_t freq_c = data[offset + 1] << 8 | data[offset + 2];
+
+					FIC_FI_OTHER_FREQ f;
+					f.id_msb = id_msb;
+					if(rm == FIC_FREQUENCY_INFO::DRM) {
+						bool multiplier_10khz = freq_c & 0x8000;
+						f.freq_khz = (freq_c & 0x7FFF) * (multiplier_10khz ? 10.0 : 1.0);
+					} else {
+						f.freq_khz = freq_c & 0x7FFF;	// AMSS: always 1 kHz steps, top bit Rfu
+					}
+					new_info.other_freqs.push_back(f);
+				}
+				break;
+
+			default:
+				// reserved R&M value - can't interpret the frequency list, but its length is
+				// still known, so just skip over it and keep parsing the rest of the FIG
+				break;
+			}
+			offset = freq_list_end;
+
+			FIC_FREQUENCY_INFO& current_info = frequency_infos[key];
+			if(current_info != new_info) {
+				current_info = new_info;
+
+				size_t count = current_info.range == FIC_FREQUENCY_INFO::DAB_ENSEMBLE ? current_info.dab_freqs.size() :
+						current_info.range == FIC_FREQUENCY_INFO::FM_RDS ? current_info.fm_freqs.size() : current_info.other_freqs.size();
+				const char *range_name = current_info.range == FIC_FREQUENCY_INFO::DAB_ENSEMBLE ? "DAB" :
+						current_info.range == FIC_FREQUENCY_INFO::FM_RDS ? "FM" : current_info.range == FIC_FREQUENCY_INFO::DRM ? "DRM" : "AMSS";
+
+				fprintf(stderr, "FICDecoder: frequency info for %s Id 0x%04X (%s): %zu alternative frequenc%s\n",
+						range_name, current_info.id, current_info.other_ensemble ? "other ensemble/service" : "this ensemble/service",
+						count, count == 1 ? "y" : "ies");
+				Log(std::string("Frequency info for ") + range_name + " Id " + StringTools::IntToHex(current_info.id, 4) +
+						" (" + (current_info.other_ensemble ? "other ensemble/service" : "this ensemble/service") + "): " +
+						std::to_string(count) + " alternative frequenc" + (count == 1 ? "y" : "ies"));
+
+				observer->FICChangeFrequencyInfo(key, current_info);
+			}
+		}
+
+		group_offset = fi_list_end;
+	}
+}
+
+int64_t FICDecoder::OEServiceKey(bool oe, bool pd, uint32_t sid) {
+	// ETSI EN 300 401 clause 8.1.10: "The database key comprises the OE and P/D flags (...) and
+	// the SId field" - sid can need the full 32 bits (data services), so oe/pd go above that,
+	// rather than squeezed into a plain (32-bit) int the way the other two keys are
+	return ((int64_t) (oe ? 1 : 0) << 33) | ((int64_t) (pd ? 1 : 0) << 32) | (int64_t) sid;
+}
+
+void FICDecoder::ProcessFIG0_24(const uint8_t *data, size_t len, bool oe, bool pd) {
+	// FIG 0/24 - OE Services (ETSI EN 300 401 clause 8.1.10)
+	size_t sid_bytes = pd ? 4 : 2;
+
+	for(size_t offset = 0; offset + sid_bytes + 1 <= len;) {
+		uint32_t sid = !pd ?
+				(uint32_t) (data[offset] << 8 | data[offset + 1]) :
+				(uint32_t) data[offset] << 24 | data[offset + 1] << 16 | data[offset + 2] << 8 | data[offset + 3];
+		offset += sid_bytes;
+
+		int ca_id = (data[offset] >> 4) & 0x07;
+		int number_of_eids = data[offset] & 0x0F;
+		offset++;
+
+		int64_t key = OEServiceKey(oe, pd, sid);
+
+		if(number_of_eids == 0) {
+			// CEI ("Number of EIds = 0"): this service's database changed - drop whatever was
+			// cached for it so it gets rebuilt cleanly from the next full (non-CEI) occurrence
+			oe_services.erase(key);
+			continue;
+		}
+
+		if(offset + (size_t) number_of_eids * 2 > len)
+			break;	// malformed
+
+		FIC_OE_SERVICE new_entry;
+		new_entry.sid = sid;
+		new_entry.is_data = pd;
+		new_entry.not_in_tuned_ensemble = oe;
+		new_entry.ca_id = ca_id;
+		for(int i = 0; i < number_of_eids; i++) {
+			new_entry.eids.push_back(data[offset] << 8 | data[offset + 1]);
+			offset += 2;
+		}
+
+		FIC_OE_SERVICE& current = oe_services[key];
+		if(current != new_entry) {
+			current = new_entry;
+
+			std::string eids_str;
+			for(int eid : current.eids) {
+				if(!eids_str.empty())
+					eids_str += ", ";
+				eids_str += StringTools::IntToHex(eid, 4).substr(2);
+			}
+
+			fprintf(stderr, "FICDecoder: OE services: SId 0x%s %s: ensemble(s) %s\n",
+					StringTools::SidToHex((int) sid).c_str(),
+					current.not_in_tuned_ensemble ? "(not in tuned ensemble)" : "(in tuned ensemble)",
+					eids_str.c_str());
+			Log("OE services: SId " + StringTools::SidToHex((int) sid) + " " +
+					(current.not_in_tuned_ensemble ? "(not in tuned ensemble)" : "(in tuned ensemble)") +
+					": ensemble(s) " + eids_str);
+
+			observer->FICChangeOEService(key, current);
 		}
 	}
 }

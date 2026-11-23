@@ -56,6 +56,7 @@
 #include "ediscope_gtk_spi.h"
 #include "radiodns.h"
 #include "ediscope_gtk_rdns.h"
+#include "ediscope_gtk_links.h"
 #include "tools.h"
 #include "version.h"
 
@@ -170,6 +171,7 @@ private:
 	EDIScopeGTKLogsWindow logs_window;
 	EDIScopeGTKSPIWindow spi_window;
 	EDIScopeGTKRDNSWindow rdns_window;
+	EDIScopeGTKLinksWindow links_window;
 
 	EnsembleSource *ensemble_source;
 	std::thread ensemble_source_thread;
@@ -283,6 +285,7 @@ private:
 	Gtk::ToggleButton tglbtn_logs;
 	Gtk::ToggleButton tglbtn_spi;
 	Gtk::ToggleButton tglbtn_rdns;
+	Gtk::ToggleButton tglbtn_links;
 	Gtk::ToggleButton tglbtn_mute;
 	Gtk::VolumeButton vlmbtn;
 
@@ -335,6 +338,7 @@ private:
 	void on_tglbtn_logs();
 	void on_tglbtn_spi();
 	void on_tglbtn_rdns();
+	void on_tglbtn_links();
 	void on_services_table_selection_changed();
 	void on_cu_bar_service_clicked(uint16_t sid, int scids);
 	bool on_window_delete_event(GdkEventAny* any_event);
@@ -447,6 +451,30 @@ private:
 	void RescanRDNSServices();
 	void RDNSResultReadyEmitted();
 	std::vector<EDIScopeGTKRDNSWindow::SERVICE_ENTRY> BuildRDNSServiceList();
+
+	// Service linking (FIG 0/6), Frequency Information (FIG 0/21) and OE Services (FIG 0/24), as
+	// shown in links_window - kept here (not just inside links_window) so it survives the window
+	// being hidden/shown again
+	fic_service_linking_sets_t service_linking_sets;
+	fic_frequency_infos_t frequency_infos;
+	fic_oe_services_t oe_services;
+
+	struct SERVICE_LINKING_CHANGE {int key; FIC_SERVICE_LINKING_SET set;};
+	GTKDispatcherQueue<SERVICE_LINKING_CHANGE> fic_change_service_linking;
+	void FICChangeServiceLinking(int key, const FIC_SERVICE_LINKING_SET& set) {fic_change_service_linking.PushAndEmit(SERVICE_LINKING_CHANGE{key, set});}
+	void FICChangeServiceLinkingEmitted();
+
+	struct FREQUENCY_INFO_CHANGE {int key; FIC_FREQUENCY_INFO info;};
+	GTKDispatcherQueue<FREQUENCY_INFO_CHANGE> fic_change_frequency_info;
+	void FICChangeFrequencyInfo(int key, const FIC_FREQUENCY_INFO& info) {fic_change_frequency_info.PushAndEmit(FREQUENCY_INFO_CHANGE{key, info});}
+	void FICChangeFrequencyInfoEmitted();
+
+	struct OE_SERVICE_CHANGE {int64_t key; FIC_OE_SERVICE service;};
+	GTKDispatcherQueue<OE_SERVICE_CHANGE> fic_change_oe_service;
+	void FICChangeOEService(int64_t key, const FIC_OE_SERVICE& service) {fic_change_oe_service.PushAndEmit(OE_SERVICE_CHANGE{key, service});}
+	void FICChangeOEServiceEmitted();
+
+	std::vector<EDIScopeGTKLinksWindow::SERVICE_ENTRY> BuildLinksServiceList();
 
 	void FICChangeUTCDateTime(const FIC_DAB_DT& utc_dt);
 

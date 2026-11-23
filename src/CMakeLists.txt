@@ -8,6 +8,8 @@ list(APPEND ediscope_sources
     ensemble_player.cpp
     edi_source.cpp
     edi_player.cpp
+    edi_network_source.cpp
+    edi_pft.cpp
     eti_player.cpp
     dab_decoder.cpp
     fic_decoder.cpp
@@ -38,13 +40,12 @@ set(ediscope_gtk_sources
     ediscope_gtk_logs.cpp
     ediscope_gtk_spi.cpp
     ediscope_gtk_rdns.cpp
+    ediscope_gtk_links.cpp
     ediscope_gtk_level_meter.cpp
     ediscope_gtk_spectrum.cpp
     ediscope_gtk_stereometer.cpp
     ediscope_gtk_correlation.cpp
     ecc_countries.cpp
-    edi_network_source.cpp
-    edi_pft.cpp
     )
 
 set(common_link_list

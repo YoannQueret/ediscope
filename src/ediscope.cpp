@@ -21,12 +21,57 @@
 
 #include "ediscope.h"
 
+#include "edi_network_source.h"
+
 static EDIScopeText *ediscope = nullptr;
 
 static void break_handler(int) {
 	fprintf(stderr, "...EDIScope exits...\n");
 	if(ediscope)
 		ediscope->DoExit();
+}
+
+
+// a filename of "tcp://host:port" or "udp://host:port" is a live EDI/TCP or EDI/UDP source
+// instead of a local file - mirrors EDIScopeGTK::on_tglbtn_network_connect()'s own URI parsing
+struct NETWORK_URI {
+	bool matched;	// "tcp://" or "udp://" prefix recognized, whether or not the rest parses fine
+	bool valid;		// matched, and host:port parsed fine too
+	bool is_tcp;
+	std::string host;
+	int port;
+};
+
+static NETWORK_URI ParseNetworkURI(const std::string& uri) {
+	static const std::string PREFIX_TCP = "tcp://";
+	static const std::string PREFIX_UDP = "udp://";
+
+	NETWORK_URI result{false, false, false, "", -1};
+
+	if(uri.compare(0, PREFIX_TCP.size(), PREFIX_TCP) == 0)
+		result.is_tcp = true;
+	else if(uri.compare(0, PREFIX_UDP.size(), PREFIX_UDP) == 0)
+		result.is_tcp = false;
+	else
+		return result;
+	result.matched = true;
+
+	std::string rest = uri.substr(result.is_tcp ? PREFIX_TCP.size() : PREFIX_UDP.size());
+	size_t colon_pos = rest.find_last_of(':');
+	result.host = colon_pos == std::string::npos ? "" : rest.substr(0, colon_pos);
+	std::string port_str = colon_pos == std::string::npos ? "" : rest.substr(colon_pos + 1);
+
+	try {
+		size_t idx;
+		result.port = std::stoi(port_str, &idx);
+		if(idx != port_str.size())
+			result.port = -1;
+	} catch(const std::exception&) {
+		result.port = -1;
+	}
+
+	result.valid = result.port > 0 && result.port <= 65535 && (!result.is_tcp || !result.host.empty());
+	return result;
 }
 
 
@@ -46,7 +91,8 @@ static void usage(const char* exe) {
 					"  -u            Output untouched audio stream to stdout instead of using SDL\n"
 					"  -I            Don't catch up on stream after interruption\n"
 					"  -F            Disable dynamic FIC messages (dynamic PTY, announcements)\n"
-					"  file          Input file to be played (stdin, if not specified) - a file:// URI works too\n",
+					"  file          Input file to be played (stdin, if not specified) - a file:// URI\n"
+					"                works too, as does tcp://host:port or udp://host:port for a live EDI source\n",
 					EnsembleSource::FORMAT_ETI.c_str(),
 					EnsembleSource::FORMAT_EDI.c_str()
 			);
@@ -186,7 +232,14 @@ EDIScopeText::EDIScopeText(EDIScopeTextOptions options) {
 	if(options.untouched_output)
 		audio_output_type = AudioOutputType::Untouched;
 
-	if(options.source_format == EnsembleSource::FORMAT_ETI)
+	NETWORK_URI network_uri = ParseNetworkURI(options.filename);
+	if(network_uri.matched && !network_uri.valid) {
+		fprintf(stderr, "EDIScope: invalid network URI '%s' - use tcp://host:port or udp://host:port\n", options.filename.c_str());
+		exit(1);
+	}
+
+	// a network source is EDI-only (no live ETI/TCP or ETI/UDP equivalent), same as the GUI
+	if(options.source_format == EnsembleSource::FORMAT_ETI && !network_uri.valid)
 		ensemble_player = new ETIPlayer(audio_output_type, options.disable_int_catch_up, this);
 	else
 		ensemble_player = new EDIPlayer(audio_output_type, options.disable_int_catch_up, this);
@@ -205,7 +258,11 @@ EDIScopeText::EDIScopeText(EDIScopeTextOptions options) {
 		fprintf(stderr, "\x1B]0;" "Sub-channel %d (DAB+) - EDIScope" "\a", options.initial_subchid_dab_plus);
 	}
 
-	if(options.source_format == EnsembleSource::FORMAT_ETI)
+	if(network_uri.valid)
+		ensemble_source = network_uri.is_tcp ?
+				(EnsembleSource*) new EDITCPSource(network_uri.host, network_uri.port, this) :
+				(EnsembleSource*) new EDIUDPSource(network_uri.host, network_uri.port, this);
+	else if(options.source_format == EnsembleSource::FORMAT_ETI)
 		ensemble_source = new ETISource(options.filename, this);
 	else
 		ensemble_source = new EDISource(options.filename, this);
