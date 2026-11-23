@@ -470,6 +470,11 @@ public:
 	virtual void FICChangeDataServiceSID(int /*subchid*/, uint32_t /*sid*/) {}
 	virtual void FICRemoveDataServiceSID(int /*subchid*/) {}
 
+	// the User Application type (FIG 0/13, P/D=1, see ETSI TS 101 756 table 16) of a data
+	// service's primary component (SCIdS 0) - e.g. 0x007 "EPG" for SPI, 0x44a "Journaline", etc.
+	// - so a data service can be labelled by what it actually carries, not just "(data service)"
+	virtual void FICChangeDataServiceUAType(uint32_t /*sid*/, int /*ua_type*/) {}
+
 	// a data sub-channel's primary component (SCIdS 0) has been confirmed (FIG 0/13, P/D=1,
 	// UserApplicationType 0x007 "EPG", see ETSI TS 102 371) to carry an SPI service in MSC
 	// packet mode, at the given packet Address (see ETSI EN 300 401 clause 5.3.2.1) - the SPI
@@ -542,6 +547,7 @@ private:
 	int GetSLSAppType(const ua_data_t& ua_data);
 
 	void SetDataServiceSid(int subchid, uint32_t sid);
+	void SetDataServiceUAType(uint32_t sid, int ua_type);
 	void ResolvePacketDataService(int scid);
 	void ResolveSPIService(uint32_t sid);
 	void RemoveSPIService(int subchid);
@@ -559,6 +565,7 @@ private:
 	std::map<uint32_t,int> packet_data_service_scids;	// reverse of packet_data_service_sids: SId -> SCId
 	std::map<int,int> packet_data_subchids;	// from FIG 0/3: SCId -> SubChId (pending)
 	std::map<int,int> packet_data_addresses;	// from FIG 0/3: SCId -> packet Address (pending)
+	std::map<uint32_t,int> data_service_ua_types;	// from FIG 0/13 (P/D=1): SId -> UAtype of its primary component (SCIdS 0)
 	std::set<uint32_t> spi_service_sids;	// from FIG 0/13 (P/D=1): data service SIds whose primary component (SCIdS 0) is UAtype EPG
 	std::map<int,int> spi_subchannels;	// currently confirmed SPI (FIG 0/13 UAtype EPG) sub-channels: SubChId -> packet Address
 	std::map<int,bool> packet_mode_fec;	// from FIG 0/14: SubChId -> FEC scheme applied (EN 300 401 clause 5.3.5)
@@ -613,6 +620,7 @@ public:
 	static std::string ConvertDateTimeToString(FIC_DAB_DT utc_dt, const int lto, bool output_ms);
 	static std::string ConvertPTYToString(const int value, const int inter_table_id);
 	static std::string ConvertASuTypeToString(const int value);
+	static std::string ConvertUATypeToString(const int value);
 	static std::string DeriveShortLabelUTF8(const std::string& long_label, uint16_t short_label_mask);
 };
 

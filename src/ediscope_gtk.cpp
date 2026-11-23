@@ -290,6 +290,7 @@ EDIScopeGTK::EDIScopeGTK(EDIScopeGTKOptions options) : combo_network_uri(true) {
 	fic_remove_subchannel.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::FICRemoveSubchannelEmitted));
 	fic_change_data_service_sid.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::FICChangeDataServiceSIDEmitted));
 	fic_remove_data_service_sid.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::FICRemoveDataServiceSIDEmitted));
+	fic_change_data_service_ua_type.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::FICChangeDataServiceUATypeEmitted));
 	fic_change_spi_service.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::FICChangeSPIServiceEmitted));
 	fic_remove_spi_service.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::FICRemoveSPIServiceEmitted));
 	spi_info_updated.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::SPIInfoUpdatedEmitted));
@@ -400,7 +401,9 @@ void EDIScopeGTK::RenderServiceDetailCell(Gtk::CellRenderer* renderer, const Gtk
 		break;
 	case 3:	{ // Label
 		if(!service.is_audio) {
-			text = "(data service)";
+			std::map<uint32_t,int>::const_iterator ua_it = service.sid != LISTED_SERVICE::sid_none ?
+					known_data_service_ua_types.find((uint32_t) service.sid) : known_data_service_ua_types.end();
+			text = ua_it != known_data_service_ua_types.end() ? "(" + FICDecoder::ConvertUATypeToString(ua_it->second) + ")" : "(data service)";
 			break;
 		}
 		text = FICDecoder::ConvertLabelToUTF8(service.label, nullptr);
@@ -1663,6 +1666,12 @@ void EDIScopeGTK::FICChangeDataServiceSIDEmitted() {
 	UpdateCUBar();
 }
 
+void EDIScopeGTK::FICChangeDataServiceUATypeEmitted() {
+	std::pair<uint32_t,int> change = fic_change_data_service_ua_type.Pop();
+	known_data_service_ua_types[change.first] = change.second;
+	RebuildDataSubchannelRows();
+}
+
 void EDIScopeGTK::FICChangeSPIServiceEmitted() {
 	SPI_SERVICE_CHANGE change = fic_change_spi_service.Pop();
 	fprintf(stderr, "EDIScopeGTK: SubChId %d: SPI service confirmed (packet address %d, FEC %s)\n",
@@ -2077,6 +2086,7 @@ void EDIScopeGTK::StopEnsembleSource() {
 	links_window.Clear();
 	known_subchannels.clear();
 	known_data_service_sids.clear();
+	known_data_service_ua_types.clear();
 	UpdateCUBar();
 	ensemble_player->StopAudio();
 	label_ensemble.set_label("");

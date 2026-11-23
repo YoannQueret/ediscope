@@ -39,6 +39,7 @@ void FICDecoder::Reset() {
 	packet_data_service_scids.clear();
 	packet_data_subchids.clear();
 	packet_data_addresses.clear();
+	data_service_ua_types.clear();
 	spi_service_sids.clear();
 	spi_subchannels.clear();
 	packet_mode_fec.clear();
@@ -351,6 +352,19 @@ void FICDecoder::SetDataServiceSid(int subchid, uint32_t sid) {
 	// the SubChId possibly changed under an already-known SPI SId (e.g. a mux-side hot
 	// reconfiguration) - re-resolve so FICChangeSPIService fires again with the right one
 	ResolveSPIService(sid);
+}
+
+void FICDecoder::SetDataServiceUAType(uint32_t sid, int ua_type) {
+	std::map<uint32_t,int>::iterator it = data_service_ua_types.find(sid);
+	if(it != data_service_ua_types.end() && it->second == ua_type)
+		return;
+	data_service_ua_types[sid] = ua_type;
+
+	fprintf(stderr, "FICDecoder: SId 0x%s: data service user application %s\n",
+			StringTools::SidToHex((int) sid).c_str(), ConvertUATypeToString(ua_type).c_str());
+	Log("SId " + StringTools::SidToHex((int) sid) + ": data service user application " + ConvertUATypeToString(ua_type));
+
+	observer->FICChangeDataServiceUAType(sid, ua_type);
 }
 
 void FICDecoder::ResolvePacketDataService(int scid) {
@@ -746,8 +760,10 @@ void FICDecoder::ProcessFIG0_13_Data(const uint8_t *data, size_t len) {
 			size_t ua_data_length = data[offset + 1] & 0x1F;
 			offset += 2;
 
-			if(scids == 0 && ua_type == ua_type_epg) {
-				if(spi_service_sids.insert(sid).second)
+			if(scids == 0) {
+				SetDataServiceUAType(sid, ua_type);
+
+				if(ua_type == ua_type_epg && spi_service_sids.insert(sid).second)
 					ResolveSPIService(sid);
 			}
 
@@ -1652,6 +1668,26 @@ std::string FICDecoder::ConvertASuTypeToString(const int value) {
 	if(value >= 0 && value <= 10)
 		return asu_types_0_to_10[value];
 	return "unknown (" + std::to_string(value) + ")";
+}
+
+std::string FICDecoder::ConvertUATypeToString(const int value) {
+	// ETSI TS 101 756 table 16 (registered User Application types)
+	switch(value) {
+	case 0x002: return "MOT Slideshow";
+	case 0x003: return "MOT Broadcast Web Site";
+	case 0x004: return "TPEG";
+	case 0x005: return "DGPS";
+	case 0x006: return "TMC";
+	case 0x007: return "EPG (SPI)";
+	case 0x008: return "DAB Java";
+	case 0x009: return "DMB";
+	case 0x00a: return "IPDC services";
+	case 0x00b: return "Voice applications";
+	case 0x00c: return "Middleware";
+	case 0x00d: return "Filecasting";
+	case 0x44a: return "Journaline";
+	}
+	return "data service (UAtype " + StringTools::IntToHex(value, 3) + ")";
 }
 
 std::string FICDecoder::DeriveShortLabelUTF8(const std::string& long_label, uint16_t short_label_mask) {

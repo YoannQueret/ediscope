@@ -268,6 +268,7 @@ private:
 	EDIScopeGTKCUBar cu_bar;
 	std::map<int, FIC_SUBCHANNEL> known_subchannels;	// every sub-channel in the ensemble, audio or data - for accurate CU bar occupancy
 	std::map<int, uint32_t> known_data_service_sids;	// SubChId -> SId, for data sub-channels whose service identity is known
+	std::map<uint32_t, int> known_data_service_ua_types;	// SId -> UAtype (FIG 0/13, P/D=1), for data services whose carried application is known
 	int ServicesTableSlotCompare(const Gtk::TreeModel::iterator& a, const Gtk::TreeModel::iterator& b);
 	void RenderServiceDetailCell(Gtk::CellRenderer* renderer, const Gtk::TreeModel::iterator& it, int column_id);
 	Gtk::ListStore::iterator UpdateServicesTableRow(const LISTED_SERVICE& service, bool* was_new = nullptr);
@@ -387,6 +388,10 @@ private:
 	GTKDispatcherQueue<int> fic_remove_data_service_sid;
 	void FICRemoveDataServiceSID(int subchid) {fic_remove_data_service_sid.PushAndEmit(subchid);}
 	void FICRemoveDataServiceSIDEmitted();
+
+	GTKDispatcherQueue<std::pair<uint32_t,int>> fic_change_data_service_ua_type;
+	void FICChangeDataServiceUAType(uint32_t sid, int ua_type) {fic_change_data_service_ua_type.PushAndEmit(std::make_pair(sid, ua_type));}
+	void FICChangeDataServiceUATypeEmitted();
 
 	struct SPI_SERVICE_CHANGE {int subchid; int address; bool fec;};
 	GTKDispatcherQueue<SPI_SERVICE_CHANGE> fic_change_spi_service;
