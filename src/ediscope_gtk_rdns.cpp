@@ -442,6 +442,8 @@ Gtk::Widget *EDIScopeGTKRDNSWindow::BuildLogoBox(const RDNS_XML_LOGO& logo) {
 	std::string caption = logo.type;
 	if(logo.width > 0 && logo.height > 0)
 		caption += " " + std::to_string(logo.width) + "x" + std::to_string(logo.height);
+	if(!logo.data.empty())
+		caption += "\n" + StringTools::FormatByteSize(logo.data.size());
 	Gtk::Label *caption_label = Gtk::manage(new Gtk::Label(caption));
 	caption_label->get_style_context()->add_class("rdns-logo-caption");
 	caption_label->set_justify(Gtk::JUSTIFY_CENTER);

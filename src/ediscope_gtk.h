@@ -248,6 +248,7 @@ private:
 	Gtk::ComboBoxText combo_network_uri;
 	Gtk::ToggleButton tglbtn_network_connect;
 	void on_tglbtn_network_connect();
+	void on_combo_network_uri_changed();
 	void ShowNetworkConnectError(const std::string& message);
 	void ShowEnsembleWaitingMessage();
 	void AddToNetworkHistory(const std::string& uri);
@@ -270,6 +271,8 @@ private:
 	std::map<int, uint32_t> known_data_service_sids;	// SubChId -> SId, for data sub-channels whose service identity is known
 	std::map<uint32_t, int> known_data_service_ua_types;	// SId -> UAtype (FIG 0/13, P/D=1), for data services whose carried application is known
 	int ServicesTableSlotCompare(const Gtk::TreeModel::iterator& a, const Gtk::TreeModel::iterator& b);
+	int ServicesTableColumnCompare(int column_id, const Gtk::TreeModel::iterator& a, const Gtk::TreeModel::iterator& b);
+	std::string ServiceDetailCellText(const LISTED_SERVICE& service, int column_id) const;
 	void RenderServiceDetailCell(Gtk::CellRenderer* renderer, const Gtk::TreeModel::iterator& it, int column_id);
 	Gtk::ListStore::iterator UpdateServicesTableRow(const LISTED_SERVICE& service, bool* was_new = nullptr);
 	void RebuildDataSubchannelRows();

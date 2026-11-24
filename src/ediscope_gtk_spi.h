@@ -88,7 +88,7 @@ private:
 
 	static std::string PickName(const std::map<std::string,std::string>& names);
 	static std::string FormatDABBearer(bool has_dab_bearer, int ecc, int eid, uint32_t sid, bool sid_32bit, int scids);
-	static std::string FormatLogoCaption(const SPI_LOGO& logo);
+	static std::string FormatLogoCaption(const SPI_LOGO& logo, size_t data_size);
 	std::string FindServiceName(uint32_t sid) const;
 
 	Glib::RefPtr<Gdk::Pixbuf> LoadLogoPixbuf(const SPI_LOGO& logo, const std::map<std::string,std::vector<uint8_t>>& logo_data);

@@ -54,6 +54,10 @@ public:
 	// a SId's hex form, without the "0x" prefix, sized to 4 nibbles (16-bit, programme
 	// services) or 8 nibbles (32-bit, data services) depending on its actual magnitude
 	static std::string SidToHex(int sid);
+
+	// human-readable file size ("512 B", "1.4 KB", "2.0 MB", ...), decimal (1 KB = 1000 B) to
+	// match how file sizes are commonly shown, not binary (1 KiB = 1024 B)
+	static std::string FormatByteSize(size_t bytes);
 };
 
 

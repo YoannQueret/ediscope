@@ -274,22 +274,29 @@ std::string EDIScopeGTKSPIWindow::FormatDABBearer(bool has_dab_bearer, int ecc, 
 			std::to_string(scids);
 }
 
-std::string EDIScopeGTKSPIWindow::FormatLogoCaption(const SPI_LOGO& logo) {
+std::string EDIScopeGTKSPIWindow::FormatLogoCaption(const SPI_LOGO& logo, size_t data_size) {
 	// logo_colour_square/logo_colour_rectangle have a mandatory fixed size (ETSI TS 102 818
 	// clause 5.8) and must NOT carry width/height attributes at all - only logo_unrestricted
 	// actually signals its own dimensions
+	std::string dims;
 	switch(logo.type) {
 	case SPI_LOGO::LOGO_TYPE_COLOUR_SQUARE:
-		return "square 32x32";
+		dims = "square 32x32";
+		break;
 	case SPI_LOGO::LOGO_TYPE_COLOUR_RECTANGLE:
-		return "rectangle 112x32";
-	case SPI_LOGO::LOGO_TYPE_UNRESTRICTED: {
-		std::string dims = logo.width > 0 && logo.height > 0 ? " " + std::to_string(logo.width) + "x" + std::to_string(logo.height) : "";
-		return "unrestricted" + dims;
-	}
+		dims = "rectangle 112x32";
+		break;
+	case SPI_LOGO::LOGO_TYPE_UNRESTRICTED:
+		dims = "unrestricted" + (logo.width > 0 && logo.height > 0 ? " " + std::to_string(logo.width) + "x" + std::to_string(logo.height) : "");
+		break;
 	default:
-		return "logo";
+		dims = "logo";
+		break;
 	}
+
+	if(data_size)
+		dims += "\n" + StringTools::FormatByteSize(data_size);
+	return dims;
 }
 
 std::string EDIScopeGTKSPIWindow::FindServiceName(uint32_t sid) const {
@@ -375,7 +382,9 @@ Gtk::Widget *EDIScopeGTKSPIWindow::BuildLogoBox(const SPI_LOGO& logo, const std:
 	}
 	image->set_halign(Gtk::ALIGN_CENTER);
 
-	Gtk::Label *caption = Gtk::manage(new Gtk::Label(FormatLogoCaption(logo)));
+	std::map<std::string,std::vector<uint8_t>>::const_iterator data_it = logo_data.find(logo.content_name);
+	size_t data_size = data_it != logo_data.end() ? data_it->second.size() : 0;
+	Gtk::Label *caption = Gtk::manage(new Gtk::Label(FormatLogoCaption(logo, data_size)));
 	caption->get_style_context()->add_class("spi-logo-caption");
 	caption->set_justify(Gtk::JUSTIFY_CENTER);
 	caption->set_halign(Gtk::ALIGN_CENTER);

@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <climits>
 #include <cmath>
 #include <fstream>
 #include <sys/stat.h>
@@ -36,6 +37,10 @@ static EDIScopeGTK *ediscope = nullptr;
 // --- network connect history (persisted to $XDG_CONFIG_HOME/ediscope/network_history, or
 // ~/.config/ediscope/network_history) -----------------------------------------------------------
 static const size_t NETWORK_HISTORY_MAX_ENTRIES = 10;
+
+// a sentinel entry at the top of the network/file URI combo's dropdown - picking it opens a
+// native file chooser instead of being treated as a literal URI (see on_combo_network_uri_changed())
+static const std::string NETWORK_URI_BROWSE_ITEM = "Open EDI/ETI File...";
 
 static std::string GetConfigDir() {
 	const char *xdg_config_home = getenv("XDG_CONFIG_HOME");
@@ -49,11 +54,15 @@ static std::string GetNetworkHistoryPath() {
 }
 
 static std::vector<std::string> LoadNetworkHistory() {
+	static const std::string PREFIX_FILE = "file://";
+
 	std::vector<std::string> result;
 	std::ifstream file(GetNetworkHistoryPath());
 	std::string line;
 	while(std::getline(file, line) && result.size() < NETWORK_HISTORY_MAX_ENTRIES)
-		if(!line.empty())
+		// file:// sources aren't kept in history (see on_tglbtn_network_connect()) - also
+		// weeded out here in case an older version of this file still has some
+		if(!line.empty() && line.compare(0, PREFIX_FILE.size(), PREFIX_FILE) != 0)
 			result.push_back(line);
 	return result;
 }
@@ -382,10 +391,35 @@ int EDIScopeGTK::ServicesTableSlotCompare(const Gtk::TreeModel::iterator& a, con
 	return 0;
 }
 
-void EDIScopeGTK::RenderServiceDetailCell(Gtk::CellRenderer* renderer, const Gtk::TreeModel::iterator& it, int column_id) {
-	Gtk::CellRendererText *text_renderer = static_cast<Gtk::CellRendererText*>(renderer);
-	const LISTED_SERVICE& service = (LISTED_SERVICE) (*it)[services_table_cols.col_service];
+int EDIScopeGTK::ServicesTableColumnCompare(int column_id, const Gtk::TreeModel::iterator& a, const Gtk::TreeModel::iterator& b) {
+	const LISTED_SERVICE& sa = (LISTED_SERVICE) (*a)[services_table_cols.col_service];
+	const LISTED_SERVICE& sb = (LISTED_SERVICE) (*b)[services_table_cols.col_service];
 
+	switch(column_id) {
+	case 0:	// SubChId
+		return sa.subchid - sb.subchid;
+	case 1:	// SID - sid_none (-1) sorts before every real SId
+		return sa.sid - sb.sid;
+	case 2:	// ECC - ecc_none (-1) sorts before every real ECC
+		return sa.ecc - sb.ecc;
+	case 5: {	// CUs - by start position; unknown (no sub-channel/protection decoded yet) sorts last
+		int va = (!sa.subchannel.IsNone() && !sa.subchannel.pl.empty()) ? sa.subchannel.start : INT_MAX;
+		int vb = (!sb.subchannel.IsNone() && !sb.subchannel.pl.empty()) ? sb.subchannel.start : INT_MAX;
+		return va - vb; }
+	case 7: {	// Bit rate - unknown sorts last
+		int va = (!sa.subchannel.IsNone() && !sa.subchannel.pl.empty()) ? sa.subchannel.bitrate : INT_MAX;
+		int vb = (!sb.subchannel.IsNone() && !sb.subchannel.pl.empty()) ? sb.subchannel.bitrate : INT_MAX;
+		return va - vb; }
+	case 9: {	// Samplerate (only known for the currently playing sub-channel) - unknown sorts last
+		int va = (sa.is_audio && sa.audio_service.subchid == current_audio_format_subchid && current_audio_format.samplerate_khz) ? current_audio_format.samplerate_khz : INT_MAX;
+		int vb = (sb.is_audio && sb.audio_service.subchid == current_audio_format_subchid && current_audio_format.samplerate_khz) ? current_audio_format.samplerate_khz : INT_MAX;
+		return va - vb; }
+	default:	// text-based columns (Label, Short label, Protection, Format, Audio mode, Language, PTY) - sort by the same text shown in the cell
+		return ServiceDetailCellText(sa, column_id).compare(ServiceDetailCellText(sb, column_id));
+	}
+}
+
+std::string EDIScopeGTK::ServiceDetailCellText(const LISTED_SERVICE& service, int column_id) const {
 	std::string text;
 	switch(column_id) {
 	case 0:	// SubChId
@@ -469,15 +503,26 @@ void EDIScopeGTK::RenderServiceDetailCell(Gtk::CellRenderer* renderer, const Gtk
 			}
 		}
 		break;
-	case 15: {	// R - last known RadioDNS (ETSI TS 103 270) resolution outcome, if ever tested
+	case 15: {	// R - RadioDNS (ETSI TS 103 270) resolution outcome, if ever tested - a checkmark
+				// only when fully resolved; nothing otherwise (not yet tested and actively failed
+				// look the same here on purpose, that distinction is what the rDNS window is for)
 		if(service.sid != LISTED_SERVICE::sid_none) {
 			int scids = service.IsPrimary() ? 0 : service.scids;
 			std::map<std::pair<int,int>,RDNS_RESULT>::const_iterator it = rdns_results.find(std::make_pair(service.sid, scids));
-			if(it != rdns_results.end())
-				text = it->second.FullyResolved() ? "\xE2\x9C\x93" : "\xE2\x9C\x97";	// U+2713 CHECK MARK / U+2717 BALLOT X
+			if(it != rdns_results.end() && it->second.FullyResolved())
+				text = "\xE2\x9C\x93";	// U+2713 CHECK MARK
 		}
 		break; }
 	}
+
+	return text;
+}
+
+void EDIScopeGTK::RenderServiceDetailCell(Gtk::CellRenderer* renderer, const Gtk::TreeModel::iterator& it, int column_id) {
+	Gtk::CellRendererText *text_renderer = static_cast<Gtk::CellRendererText*>(renderer);
+	const LISTED_SERVICE& service = (LISTED_SERVICE) (*it)[services_table_cols.col_service];
+
+	std::string text = ServiceDetailCellText(service, column_id);
 
 	text_renderer->property_text() = text;
 	if(column_id == 13 || column_id == 14 || column_id == 15)
@@ -490,7 +535,7 @@ void EDIScopeGTK::RenderServiceDetailCell(Gtk::CellRenderer* renderer, const Gtk
 	if(!service.is_audio)
 		foreground = "grey";
 	else if(column_id == 15 && !text.empty())
-		foreground = (text == "\xE2\x9C\x93") ? "#2a8f3f" : "#c0392b";
+		foreground = "#2a8f3f";
 	text_renderer->property_foreground_set() = !foreground.empty();
 	if(!foreground.empty())
 		text_renderer->property_foreground() = foreground;
@@ -629,10 +674,13 @@ void EDIScopeGTK::InitWidgets() {
 			"udp://mcast-ip:port (multicast)\n"
 			"\n"
 			"Local file source\n"
-			"file:///path/to/file.eti (or .edi)"
+			"file:///path/to/file.eti (or .edi)\n"
+			"...or pick \"" + NETWORK_URI_BROWSE_ITEM + "\" from the dropdown"
 	);
 	for(const std::string& uri : LoadNetworkHistory())
 		combo_network_uri.append(uri);
+	combo_network_uri.prepend(NETWORK_URI_BROWSE_ITEM);
+	combo_network_uri.signal_changed().connect(sigc::mem_fun(*this, &EDIScopeGTK::on_combo_network_uri_changed));
 	combo_network_uri.get_entry()->signal_activate().connect([this]() {
 		if(!tglbtn_network_connect.get_active())
 			tglbtn_network_connect.set_active(true);
@@ -700,6 +748,11 @@ void EDIScopeGTK::InitWidgets() {
 			header_label->set_tooltip_text(column_tooltips.at(column_title));
 			header_label->show();
 			col->set_widget(*header_label);
+		} else {
+			// every other column is orderable by clicking its header - S/P/R are deliberately
+			// excluded above, they're just presence checkmarks, not a value worth sorting by
+			services_table_liststore->set_sort_func((int) i, sigc::bind<0>(sigc::mem_fun(*this, &EDIScopeGTK::ServicesTableColumnCompare), (int) i));
+			col->set_sort_column((int) i);
 		}
 	}
 
@@ -2127,7 +2180,39 @@ void EDIScopeGTK::AddToNetworkHistory(const std::string& uri) {
 	combo_network_uri.remove_all();
 	for(const std::string& h : history)
 		combo_network_uri.append(h);
+	combo_network_uri.prepend(NETWORK_URI_BROWSE_ITEM);
 	combo_network_uri.get_entry()->set_text(uri);
+}
+
+void EDIScopeGTK::on_combo_network_uri_changed() {
+	if(combo_network_uri.get_active_text() != NETWORK_URI_BROWSE_ITEM)
+		return;
+
+	Gtk::FileChooserDialog dialog(*this, "Open EDI/ETI File", Gtk::FILE_CHOOSER_ACTION_OPEN);
+	dialog.add_button("_Cancel", Gtk::RESPONSE_CANCEL);
+	dialog.add_button("_Open", Gtk::RESPONSE_OK);
+
+	Glib::RefPtr<Gtk::FileFilter> filter_eti_edi = Gtk::FileFilter::create();
+	filter_eti_edi->set_name("ETI/EDI files");
+	filter_eti_edi->add_pattern("*.eti");
+	filter_eti_edi->add_pattern("*.edi");
+	dialog.add_filter(filter_eti_edi);
+
+	Glib::RefPtr<Gtk::FileFilter> filter_all = Gtk::FileFilter::create();
+	filter_all->set_name("All files");
+	filter_all->add_pattern("*");
+	dialog.add_filter(filter_all);
+
+	int response = dialog.run();
+	if(response == Gtk::RESPONSE_OK) {
+		combo_network_uri.get_entry()->set_text("file://" + dialog.get_filename());
+
+		// same as pressing Enter in the entry - start right away, same convenience
+		if(!tglbtn_network_connect.get_active())
+			tglbtn_network_connect.set_active(true);
+	} else {
+		combo_network_uri.get_entry()->set_text("");
+	}
 }
 
 void EDIScopeGTK::on_tglbtn_network_connect() {
@@ -2138,7 +2223,8 @@ void EDIScopeGTK::on_tglbtn_network_connect() {
 		if(uri.compare(0, PREFIX_FILE.size(), PREFIX_FILE) == 0) {
 			std::string path = StringTools::FilePathFromArg(uri);
 
-			AddToNetworkHistory(uri);
+			// unlike tcp://udp:// (below), a file:// source isn't kept in the dropdown's history -
+			// it's one-shot, typically picked once via "Open EDI/ETI File..." and not re-used
 
 			// no way to pick a format in this box - infer it from the extension (defaulting to
 			// ETI, same as the CLI's own default) rather than requiring a second field just for this

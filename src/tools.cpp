@@ -103,6 +103,18 @@ std::string StringTools::SidToHex(int sid) {
 	return IntToHex(sid, (unsigned) sid > 0xFFFF ? 8 : 4).substr(2);
 }
 
+std::string StringTools::FormatByteSize(size_t bytes) {
+	char buf[32];
+	if(bytes < 1000) {
+		snprintf(buf, sizeof(buf), "%zu B", bytes);
+	} else if(bytes < 1000000) {
+		snprintf(buf, sizeof(buf), "%.1f KB", bytes / 1000.0);
+	} else {
+		snprintf(buf, sizeof(buf), "%.1f MB", bytes / 1000000.0);
+	}
+	return buf;
+}
+
 std::string StringTools::FilePathFromArg(const std::string &arg) {
 	static const std::string prefix = "file://";
 	if(arg.compare(0, prefix.size(), prefix) != 0)
