@@ -34,6 +34,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+
 #include "xml_tree.h"
 
 
@@ -187,7 +190,7 @@ bool RadioDNSResolver::QuerySRV(const std::string& fqdn, std::string& target, in
 	return true;
 }
 
-bool RadioDNSResolver::HttpGet(const std::string& host, int port, const std::string& path, int& status, std::string& content_type, std::string& body, std::string& error) {
+int RadioDNSResolver::ConnectTCP(const std::string& host, int port, std::string& error) {
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_UNSPEC;
@@ -200,7 +203,7 @@ bool RadioDNSResolver::HttpGet(const std::string& host, int port, const std::str
 	int gai_err = getaddrinfo(host.c_str(), port_str, &hints, &addr_res);
 	if(gai_err != 0) {
 		error = std::string("can't resolve host '") + host + "': " + gai_strerror(gai_err);
-		return false;
+		return -1;
 	}
 
 	// non-blocking connect with a timeout, rather than risking a connect() call that hangs for
@@ -236,7 +239,7 @@ bool RadioDNSResolver::HttpGet(const std::string& host, int port, const std::str
 
 	if(fd < 0) {
 		error = "connection failed (timeout or refused)";
-		return false;
+		return -1;
 	}
 
 	// back to blocking for the rest - simpler read/write below, still timeout-guarded
@@ -249,26 +252,10 @@ bool RadioDNSResolver::HttpGet(const std::string& host, int port, const std::str
 	setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 	setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
-	std::string request = "GET " + path + " HTTP/1.1\r\n"
-			"Host: " + host + "\r\n"
-			"User-Agent: EDIScope\r\n"
-			"Accept: */*\r\n"
-			"Connection: close\r\n"
-			"\r\n";
+	return fd;
+}
 
-	if(send(fd, request.c_str(), request.size(), 0) != (ssize_t) request.size()) {
-		close(fd);
-		error = "failed to send HTTP request to '" + host + "'";
-		return false;
-	}
-
-	std::string response;
-	char buf[8192];
-	ssize_t n;
-	while((n = recv(fd, buf, sizeof(buf), 0)) > 0)
-		response.append(buf, n);
-	close(fd);
-
+bool RadioDNSResolver::ParseHttpResponse(const std::string& response, int& status, std::string& content_type, std::string& body, std::string& error) {
 	if(response.empty()) {
 		error = "no response from server (timeout?)";
 		return false;
@@ -353,21 +340,118 @@ bool RadioDNSResolver::HttpGet(const std::string& host, int port, const std::str
 	return true;
 }
 
-bool RadioDNSResolver::HttpGetUrl(const std::string& url, int& status, std::string& content_type, std::string& body, std::string& error) {
-	static const std::string PREFIX = "http://";
-	if(url.compare(0, PREFIX.size(), PREFIX) != 0) {
-		// https:// (or anything else) - this project never speaks TLS anywhere else either
-		error = url.compare(0, 8, "https://") == 0 ? "https:// not supported (no TLS)" : "unsupported URL scheme";
+bool RadioDNSResolver::HttpGet(const std::string& host, int port, const std::string& path, int& status, std::string& content_type, std::string& body, std::string& error) {
+	int fd = ConnectTCP(host, port, error);
+	if(fd < 0)
+		return false;
+
+	std::string request = "GET " + path + " HTTP/1.1\r\n"
+			"Host: " + host + "\r\n"
+			"User-Agent: EDIScope\r\n"
+			"Accept: */*\r\n"
+			"Connection: close\r\n"
+			"\r\n";
+
+	if(send(fd, request.c_str(), request.size(), 0) != (ssize_t) request.size()) {
+		close(fd);
+		error = "failed to send HTTP request to '" + host + "'";
 		return false;
 	}
 
-	std::string rest = url.substr(PREFIX.size());
+	std::string response;
+	char buf[8192];
+	ssize_t n;
+	while((n = recv(fd, buf, sizeof(buf), 0)) > 0)
+		response.append(buf, n);
+	close(fd);
+
+	return ParseHttpResponse(response, status, content_type, body, error);
+}
+
+bool RadioDNSResolver::HttpsGet(const std::string& host, int port, const std::string& path, int& status, std::string& content_type, std::string& body, std::string& error) {
+	int fd = ConnectTCP(host, port, error);
+	if(fd < 0)
+		return false;
+
+	SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());
+	if(!ctx) {
+		close(fd);
+		error = "failed to create TLS context";
+		return false;
+	}
+
+	SSL *ssl = SSL_new(ctx);
+	SSL_set_fd(ssl, fd);
+	SSL_set_tlsext_host_name(ssl, host.c_str());	// SNI - many hosts/CDNs need it to pick the right certificate/vhost
+
+	bool ok = true;
+	std::string response;
+
+	if(SSL_connect(ssl) != 1) {
+		char err_buf[256];
+		ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf));
+		error = std::string("TLS handshake failed: ") + err_buf;
+		ok = false;
+	}
+
+	if(ok) {
+		std::string request = "GET " + path + " HTTP/1.1\r\n"
+				"Host: " + host + "\r\n"
+				"User-Agent: EDIScope\r\n"
+				"Accept: */*\r\n"
+				"Connection: close\r\n"
+				"\r\n";
+
+		if(SSL_write(ssl, request.c_str(), (int) request.size()) <= 0) {
+			error = "failed to send HTTPS request to '" + host + "'";
+			ok = false;
+		}
+	}
+
+	if(ok) {
+		char buf[8192];
+		int n;
+		while((n = SSL_read(ssl, buf, sizeof(buf))) > 0)
+			response.append(buf, n);
+	}
+
+	SSL_shutdown(ssl);
+	SSL_free(ssl);
+	SSL_CTX_free(ctx);
+	close(fd);
+
+	if(!ok)
+		return false;
+
+	return ParseHttpResponse(response, status, content_type, body, error);
+}
+
+bool RadioDNSResolver::HttpGetUrl(const std::string& url, int& status, std::string& content_type, std::string& body, std::string& error) {
+	static const std::string PREFIX_HTTP = "http://";
+	static const std::string PREFIX_HTTPS = "https://";
+
+	bool is_https;
+	std::string rest;
+	int default_port;
+	if(url.compare(0, PREFIX_HTTPS.size(), PREFIX_HTTPS) == 0) {
+		is_https = true;
+		rest = url.substr(PREFIX_HTTPS.size());
+		default_port = 443;
+	} else if(url.compare(0, PREFIX_HTTP.size(), PREFIX_HTTP) == 0) {
+		is_https = false;
+		rest = url.substr(PREFIX_HTTP.size());
+		default_port = 80;
+	} else {
+		error = "unsupported URL scheme";
+		return false;
+	}
+
 	size_t slash = rest.find('/');
 	std::string host_port = slash == std::string::npos ? rest : rest.substr(0, slash);
 	std::string path = slash == std::string::npos ? "/" : rest.substr(slash);
 
 	std::string host = host_port;
-	int port = 80;
+	int port = default_port;
 	size_t colon = host_port.find(':');
 	if(colon != std::string::npos) {
 		host = host_port.substr(0, colon);
@@ -379,7 +463,8 @@ bool RadioDNSResolver::HttpGetUrl(const std::string& url, int& status, std::stri
 		return false;
 	}
 
-	return HttpGet(host, port, path, status, content_type, body, error);
+	return is_https ? HttpsGet(host, port, path, status, content_type, body, error) :
+			HttpGet(host, port, path, status, content_type, body, error);
 }
 
 namespace {

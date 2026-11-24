@@ -99,6 +99,7 @@ private:
 	Gtk::Label info_placeholder;
 	Gtk::Label info_provider_name;
 	Gtk::Label info_provider_desc;
+	Gtk::FlowBox info_provider_logos_flow;	// the serviceProvider's own logos - shown here, not under "Logos" (which is this service's own)
 	Gtk::Label info_service_name;
 	Gtk::Label info_service_desc;
 
@@ -151,6 +152,7 @@ private:
 	void on_bearer_copy_clicked();
 	Gtk::TreeModel::iterator FindRow(int sid, int scids);
 	void RefreshRowStatus(const Gtk::TreeModel::iterator& row_it);
+	void RenderStatusCell(Gtk::CellRenderer* renderer, const Gtk::TreeModel::iterator& it);
 	void ShowDetailFor(int sid, int scids);
 	void RequestTest(int sid, int scids, int ecc, int eid);
 	void on_services_list_selection_changed();

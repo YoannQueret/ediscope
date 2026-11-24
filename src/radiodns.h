@@ -147,15 +147,30 @@ public:
 	// this one - out_service_matched is false if none of them carried that bearer
 	static bool ParseSIXml(const std::string& xml, const std::string& own_bearer_uri, RDNS_XML_SERVICE& out_provider, RDNS_XML_SERVICE& out_service, bool& out_service_matched);
 
-	// fetches one logo's pixel data over plain HTTP (logo URLs in an SI.xml are never required to
-	// be HTTPS, and this project otherwise never speaks TLS) - does nothing (returns false) for an
-	// https:// URL rather than silently failing a TLS handshake
+	// fetches one logo's pixel data over HTTP or HTTPS, whichever its own url uses - many
+	// real-world providers serve logos (often via a CDN) over HTTPS even though an SI.xml is
+	// never required to use it
 	static bool FetchLogo(RDNS_XML_LOGO& logo);
 
 private:
 	static bool QueryCNAME(const std::string& fqdn, std::string& target, std::string& error);
 	static bool QuerySRV(const std::string& fqdn, std::string& target, int& port, std::string& error);
+
+	// plain TCP connect with a timeout, shared by HttpGet() and HttpsGet() - returns the
+	// connected socket fd, or -1 (with error set) on failure
+	static int ConnectTCP(const std::string& host, int port, std::string& error);
+
+	// shared response parsing (status line, headers, chunked/Content-Length body) for whatever
+	// HttpGet()/HttpsGet() already read off the wire
+	static bool ParseHttpResponse(const std::string& response, int& status, std::string& content_type, std::string& body, std::string& error);
+
 	static bool HttpGet(const std::string& host, int port, const std::string& path, int& status, std::string& content_type, std::string& body, std::string& error);
+
+	// same as HttpGet(), over TLS (SNI is set, but the server's certificate is NOT validated -
+	// this is a diagnostic tool fetching publicly-served SI.xml/logo assets, not a security
+	// boundary, and shipping a CA trust store/verification policy is out of scope)
+	static bool HttpsGet(const std::string& host, int port, const std::string& path, int& status, std::string& content_type, std::string& body, std::string& error);
+
 	static bool HttpGetUrl(const std::string& url, int& status, std::string& content_type, std::string& body, std::string& error);
 };
 

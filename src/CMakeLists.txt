@@ -69,7 +69,8 @@ install(TARGETS ediscope DESTINATION bin)
 if(GTKMM_FOUND)
     add_executable(ediscope_gtk ${ediscope_sources} ${ediscope_gtk_sources})
     # resolv: res_query()/ns_*() used by radiodns.cpp for raw CNAME/SRV DNS record lookups
-    target_link_libraries(ediscope_gtk ${common_link_list} ${GTKMM_LIBRARIES} resolv)
+    # openssl: TLS transport for radiodns.cpp's HTTPS fetches (see top-level CMakeLists.txt)
+    target_link_libraries(ediscope_gtk ${common_link_list} ${GTKMM_LIBRARIES} resolv ${OPENSSL_LIBRARIES})
     install(TARGETS ediscope_gtk DESTINATION bin)
 
     # Also register a desktop launcher + icon for the current user right after every build (not

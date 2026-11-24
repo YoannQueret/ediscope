@@ -98,8 +98,11 @@ EDIScopeGTKRDNSWindow::EDIScopeGTKRDNSWindow() :
 		Gtk::CellRendererText *status_renderer = Gtk::manage(new Gtk::CellRendererText());
 		int col_index = services_list.append_column("Status", *status_renderer) - 1;
 		Gtk::TreeViewColumn *status_col = services_list.get_column(col_index);
-		status_col->add_attribute(status_renderer->property_text(), list_cols.col_status);
-		status_col->add_attribute(status_renderer->property_foreground(), list_cols.col_status_color);
+		// a plain add_attribute() binding would hand GTK an empty string whenever
+		// col_status_color is "" (not tested / no color) and have it try to parse that as a
+		// color ("Gtk-WARNING: Don't know color ''") - a cell_data_func can leave the property
+		// unset instead, same pattern as EDIScopeGTK::RenderServiceDetailCell()'s own "R" column
+		status_col->set_cell_data_func(*status_renderer, sigc::mem_fun(*this, &EDIScopeGTKRDNSWindow::RenderStatusCell));
 	}
 	services_list.get_selection()->signal_changed().connect(sigc::mem_fun(*this, &EDIScopeGTKRDNSWindow::on_services_list_selection_changed));
 
@@ -161,6 +164,12 @@ EDIScopeGTKRDNSWindow::EDIScopeGTKRDNSWindow() :
 	info_provider_desc.set_line_wrap(true);
 	info_provider_desc.set_selectable(true);
 
+	info_provider_logos_flow.set_selection_mode(Gtk::SELECTION_NONE);
+	info_provider_logos_flow.set_row_spacing(10);
+	info_provider_logos_flow.set_column_spacing(10);
+	info_provider_logos_flow.set_valign(Gtk::ALIGN_START);
+	info_provider_logos_flow.set_margin_top(6);
+
 	info_service_name.get_style_context()->add_class("rdns-title");
 	info_service_name.set_halign(Gtk::ALIGN_START);
 	info_service_name.set_line_wrap(true);
@@ -172,6 +181,7 @@ EDIScopeGTKRDNSWindow::EDIScopeGTKRDNSWindow() :
 	info_box.pack_start(info_placeholder, false, false);
 	info_box.pack_start(info_provider_name, false, false);
 	info_box.pack_start(info_provider_desc, false, false);
+	info_box.pack_start(info_provider_logos_flow, false, true);	// fill=true - without it, the FlowBox only gets its minimum width (one logo wide) and stacks vertically instead of flowing horizontally
 	info_box.pack_start(info_service_name, false, false);
 	info_box.pack_start(info_service_desc, false, false);
 
@@ -334,6 +344,16 @@ void EDIScopeGTKRDNSWindow::RefreshRowStatus(const Gtk::TreeModel::iterator& row
 	row[list_cols.col_status_color] = color;
 }
 
+void EDIScopeGTKRDNSWindow::RenderStatusCell(Gtk::CellRenderer* renderer, const Gtk::TreeModel::iterator& it) {
+	Gtk::CellRendererText *text_renderer = static_cast<Gtk::CellRendererText*>(renderer);
+	Glib::ustring color = (*it)[list_cols.col_status_color];
+
+	text_renderer->property_text() = (Glib::ustring) (*it)[list_cols.col_status];
+	text_renderer->property_foreground_set() = !color.empty();
+	if(!color.empty())
+		text_renderer->property_foreground() = color;
+}
+
 void EDIScopeGTKRDNSWindow::ShowDetailFor(int sid, int scids) {
 	Gtk::TreeModel::iterator row_it = FindRow(sid, scids);
 	if(!row_it) {
@@ -472,6 +492,15 @@ void EDIScopeGTKRDNSWindow::PopulateResultTabs(const RDNS_RESULT& result) {
 		info_provider_desc.set_text(!result.si_provider.long_description.empty() ? result.si_provider.long_description : result.si_provider.short_description);
 	}
 
+	for(Gtk::Widget *child : info_provider_logos_flow.get_children())
+		info_provider_logos_flow.remove(*child);
+	info_provider_logos_flow.set_visible(!result.si_provider.logos.empty());
+	for(const RDNS_XML_LOGO& logo : result.si_provider.logos) {
+		Gtk::Widget *box = BuildLogoBox(logo);
+		info_provider_logos_flow.insert(*box, -1);
+		box->show_all();
+	}
+
 	info_service_name.set_visible(have_service_info);
 	info_service_desc.set_visible(have_service_info && !result.si_service.short_description.empty());
 	if(have_service_info) {
@@ -481,20 +510,15 @@ void EDIScopeGTKRDNSWindow::PopulateResultTabs(const RDNS_RESULT& result) {
 		info_service_desc.set_text(!result.si_service.long_description.empty() ? result.si_service.long_description : result.si_service.short_description);
 	}
 
-	// --- Logos ---
+	// --- Logos --- (this service's own - the serviceProvider's are shown under "Service
+	// Provider" in the Info tab instead, see info_provider_logos_flow above)
 	for(Gtk::Widget *child : logos_flow.get_children())
 		logos_flow.remove(*child);
 
-	std::vector<const RDNS_XML_LOGO*> logos;
-	for(const RDNS_XML_LOGO& logo : result.si_provider.logos)
-		logos.push_back(&logo);
-	for(const RDNS_XML_LOGO& logo : result.si_service.logos)
-		logos.push_back(&logo);
-
-	logos_empty_label.set_visible(logos.empty());
-	logos_scroll.set_visible(!logos.empty());
-	for(const RDNS_XML_LOGO *logo : logos) {
-		Gtk::Widget *box = BuildLogoBox(*logo);
+	logos_empty_label.set_visible(result.si_service.logos.empty());
+	logos_scroll.set_visible(!result.si_service.logos.empty());
+	for(const RDNS_XML_LOGO& logo : result.si_service.logos) {
+		Gtk::Widget *box = BuildLogoBox(logo);
 		logos_flow.insert(*box, -1);
 		box->show_all();
 	}

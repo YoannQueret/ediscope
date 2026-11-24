@@ -113,6 +113,12 @@ pkg_check_modules(GTKMM gtkmm-3.0)
 if(GTKMM_FOUND)
     include_directories(${GTKMM_INCLUDE_DIRS})
     link_directories(${GTKMM_LIBRARY_DIRS})
+
+    # openssl - TLS transport only (for radiodns.cpp's HTTPS logo/SI.xml fetches); all actual
+    # DAB/EDI/RadioDNS protocol parsing stays hand-rolled
+    pkg_check_modules(OPENSSL openssl REQUIRED)
+    include_directories(${OPENSSL_INCLUDE_DIRS})
+    link_directories(${OPENSSL_LIBRARY_DIRS})
 endif()
 
 if(USE_FDK-AAC)
