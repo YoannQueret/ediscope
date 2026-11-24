@@ -213,8 +213,13 @@ EDIScopeGTKRDNSWindow::EDIScopeGTKRDNSWindow() :
 	bearers_view.append_column("Bitrate", bearers_cols.col_bitrate);
 	bearers_view.append_column("Cost", bearers_cols.col_cost);
 	bearers_view.append_column("Type", bearers_cols.col_mime);
-	for(int i = 0; i < 4; i++)
-		bearers_view.get_column(i)->set_resizable(true);
+	for(int i = 0; i < 4; i++) {
+		Gtk::TreeViewColumn *col = bearers_view.get_column(i);
+		col->set_resizable(true);
+		// orderable by clicking the header, same as the main window's "Services details" table
+		bearers_store->set_sort_func(i, sigc::bind<0>(sigc::mem_fun(*this, &EDIScopeGTKRDNSWindow::BearersTableColumnCompare), i));
+		col->set_sort_column(i);
+	}
 	bearers_view.add_events(Gdk::BUTTON_RELEASE_MASK);
 	// button-RELEASE, not press: TreeView's own internal click handling was observed to consume
 	// the first button-press-event of any click sequence entirely - our connected handler was
@@ -352,6 +357,21 @@ void EDIScopeGTKRDNSWindow::RenderStatusCell(Gtk::CellRenderer* renderer, const 
 	text_renderer->property_foreground_set() = !color.empty();
 	if(!color.empty())
 		text_renderer->property_foreground() = color;
+}
+
+int EDIScopeGTKRDNSWindow::BearersTableColumnCompare(int column_id, const Gtk::TreeModel::iterator& a, const Gtk::TreeModel::iterator& b) {
+	switch(column_id) {
+	case 1: {	// Bitrate - numeric, not the formatted "128 kBit/s" text
+		int va = (*a)[bearers_cols.col_bitrate_sort];
+		int vb = (*b)[bearers_cols.col_bitrate_sort];
+		return va - vb; }
+	case 2:		// Cost
+		return Glib::ustring((*a)[bearers_cols.col_cost]).compare((*b)[bearers_cols.col_cost]);
+	case 3:		// Type
+		return Glib::ustring((*a)[bearers_cols.col_mime]).compare((*b)[bearers_cols.col_mime]);
+	default:	// Bearer
+		return Glib::ustring((*a)[bearers_cols.col_id]).compare((*b)[bearers_cols.col_id]);
+	}
 }
 
 void EDIScopeGTKRDNSWindow::ShowDetailFor(int sid, int scids) {
@@ -530,6 +550,7 @@ void EDIScopeGTKRDNSWindow::PopulateResultTabs(const RDNS_RESULT& result) {
 		Gtk::TreeModel::Row row = *row_it;
 		row[bearers_cols.col_id] = bearer.id;
 		row[bearers_cols.col_bitrate] = bearer.bitrate.empty() ? "" : bearer.bitrate + " kBit/s";
+		row[bearers_cols.col_bitrate_sort] = bearer.bitrate.empty() ? -1 : atoi(bearer.bitrate.c_str());
 		row[bearers_cols.col_cost] = bearer.cost;
 		row[bearers_cols.col_mime] = bearer.mime;
 	}

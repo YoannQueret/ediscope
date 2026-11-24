@@ -112,9 +112,10 @@ private:
 		Gtk::TreeModelColumn<Glib::ustring> col_bitrate;
 		Gtk::TreeModelColumn<Glib::ustring> col_cost;
 		Gtk::TreeModelColumn<Glib::ustring> col_mime;
+		Gtk::TreeModelColumn<int> col_bitrate_sort;	// not displayed - numeric sort key for col_bitrate ("128 kBit/s" sorts wrong as text)
 
 		BearersColumns() {
-			add(col_id); add(col_bitrate); add(col_cost); add(col_mime);
+			add(col_id); add(col_bitrate); add(col_cost); add(col_mime); add(col_bitrate_sort);
 		}
 	};
 	Gtk::ScrolledWindow bearers_scroll;
@@ -153,6 +154,7 @@ private:
 	Gtk::TreeModel::iterator FindRow(int sid, int scids);
 	void RefreshRowStatus(const Gtk::TreeModel::iterator& row_it);
 	void RenderStatusCell(Gtk::CellRenderer* renderer, const Gtk::TreeModel::iterator& it);
+	int BearersTableColumnCompare(int column_id, const Gtk::TreeModel::iterator& a, const Gtk::TreeModel::iterator& b);
 	void ShowDetailFor(int sid, int scids);
 	void RequestTest(int sid, int scids, int ecc, int eid);
 	void on_services_list_selection_changed();
