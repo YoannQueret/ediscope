@@ -76,6 +76,10 @@ private:
 	void RefreshHistory();
 	bool on_history_button_press_event(GdkEventButton* button_event, size_t index);
 
+	// shows the slide at full size on hover (too small to make out any detail as a thumbnail),
+	// same custom-tooltip-image pattern as the rDNS/SPI windows' own logos
+	bool OnHistoryQueryTooltip(int x, int y, bool keyboard_tooltip, const Glib::RefPtr<Gtk::Tooltip>& tooltip, size_t index);
+
 	// whichever slide (current, or one from the history strip) was right-clicked most
 	// recently - captured at click time, so the save/copy/view actions below stay correct
 	// even if the slide on screen or the history itself changes while the menu is still open

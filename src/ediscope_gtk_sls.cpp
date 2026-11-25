@@ -99,6 +99,10 @@ EDIScopeGTKSlideshowContent::EDIScopeGTKSlideshowContent() {
 		history_event_boxes[i].signal_button_press_event().connect(
 				sigc::bind(sigc::mem_fun(*this, &EDIScopeGTKSlideshowContent::on_history_button_press_event), i));
 
+		history_event_boxes[i].set_has_tooltip(true);
+		history_event_boxes[i].signal_query_tooltip().connect(
+				sigc::bind(sigc::mem_fun(*this, &EDIScopeGTKSlideshowContent::OnHistoryQueryTooltip), i));
+
 		history_box.pack_start(history_event_boxes[i], Gtk::PACK_SHRINK);
 	}
 
@@ -223,14 +227,28 @@ void EDIScopeGTKSlideshowContent::PushHistory(const MOT_FILE& slide, Glib::RefPt
 
 void EDIScopeGTKSlideshowContent::RefreshHistory() {
 	size_t i = 0;
-	for(; i < history.size(); i++) {
+	for(; i < history.size(); i++)
 		history_images[i].set(history[i].thumb_pixbuf);
-		history_images[i].set_tooltip_text(history[i].tooltip);
-	}
-	for(; i < max_history; i++) {
+	for(; i < max_history; i++)
 		history_images[i].clear();
-		history_images[i].set_tooltip_text("");
-	}
+}
+
+bool EDIScopeGTKSlideshowContent::OnHistoryQueryTooltip(int /*x*/, int /*y*/, bool /*keyboard_tooltip*/, const Glib::RefPtr<Gtk::Tooltip>& tooltip, size_t index) {
+	if(index >= history.size())
+		return false;
+
+	const HistorySlide& entry = history[index];
+
+	Gtk::Box *box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 4));
+	Gtk::Image *full_image = Gtk::manage(new Gtk::Image(entry.full_pixbuf));
+	Gtk::Label *label = Gtk::manage(new Gtk::Label(entry.tooltip));
+	label->set_halign(Gtk::ALIGN_START);
+	box->pack_start(*full_image, false, false);
+	box->pack_start(*label, false, false);
+	box->show_all();
+
+	tooltip->set_custom(*box);
+	return true;
 }
 
 bool EDIScopeGTKSlideshowContent::on_image_button_press_event(GdkEventButton* button_event) {
