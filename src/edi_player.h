@@ -19,6 +19,7 @@
 #ifndef EDI_PLAYER_H_
 #define EDI_PLAYER_H_
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <deque>
@@ -56,6 +57,9 @@ private:
 	// held by the playback thread while it decodes a frame, so Flush() can wait for that to end
 	std::mutex playback_mutex;
 
+	// a file is being played: timestamps ignored, frames paced by EnsemblePlayer::ProcessFrame
+	std::atomic<bool> ignore_timestamps;
+
 	// last margin/buffer delay seen, so a report from either side of the split always carries
 	// both figures, even though they are now measured independently, often several frames apart
 	std::mutex timing_mutex;
@@ -72,6 +76,7 @@ public:
 
 	void PrepareStop() override;
 	void Flush() override;
+	void SetIgnoreTimestamps(bool ignore) override;
 };
 
 #endif /* EDI_PLAYER_H_ */

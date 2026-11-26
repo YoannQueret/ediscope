@@ -11,7 +11,7 @@ addons: &addons
       - libfdk-aac-dev
       - libmpg123-dev
       - libsdl2-dev
-      - libgtkmm-3.0-dev
+      - qt6-base-dev
       - g++-9
 
 script:

@@ -117,7 +117,7 @@ struct RDNS_RESULT {
 // fetches its Service Information document over HTTP (/radiodns/spi/3.1/SI.xml, per RadioDNS's
 // own "HOWTO - Make an SI file accessible...") - exactly the chain a RadioDNS Hybrid Radio
 // receiver itself performs. Entirely blocking/synchronous (DNS + HTTP I/O): always run on a
-// background thread, never on the GTK main thread.
+// background thread, never on the UI thread.
 class RadioDNSResolver {
 public:
 	// runs the whole chain for one DAB service and returns a result with every stage it managed

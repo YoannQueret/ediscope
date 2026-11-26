@@ -141,7 +141,7 @@ protected:
 	// cleared by PrepareStop() - checked by every method below that would otherwise call into
 	// the observer, so that once shutdown has begun, no NEW attempt is made to report anything
 	// through it. This doesn't help a report that's already in progress (e.g. blocked writing
-	// into a GTK dispatcher's pipe after the main loop has died for good), but it closes off
+	// into the UI's event queue after its main loop has died for good), but it closes off
 	// every other avenue for a thread to get stuck there during/after shutdown
 	std::atomic<bool> reporting_enabled;
 
@@ -181,7 +181,7 @@ public:
 
 	// signals EDIPlayer's playback thread (if any) to stop, without blocking on it, and disables
 	// all further observer reporting - call this as early as possible, before joining any other
-	// thread (e.g. the ensemble source's reader thread): once the GTK main loop has stopped for
+	// thread (e.g. the ensemble source's reader thread): once the UI main loop has stopped for
 	// good (the window has closed), nothing is left to drain the observer's cross-thread
 	// notification queue, so a thread still running and reporting through it (audio levels, EDI
 	// timing, FIC changes) can block forever - leaving it unsignaled for as long as some other
@@ -194,6 +194,11 @@ public:
 	// from the previous connection reaches the decoders afterwards. Nothing to do for a player that
 	// decodes each frame as soon as it is received
 	virtual void Flush() {}
+
+	// playing a file (a recording) rather than a live source: an EDI player then ignores the
+	// frames' timestamps and plays them at the fixed 24 ms pace, as for an ETI file (whose
+	// timestamps would all lie in the past). Only to be called while no source is running
+	virtual void SetIgnoreTimestamps(bool /*ignore*/) {}
 
 	void ProcessFrame(const uint8_t *data);
 

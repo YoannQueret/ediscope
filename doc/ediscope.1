@@ -1,77 +1,76 @@
-.TH EDISCOPE 1 "2024-03-30"
+.TH EDISCOPE 1 "2026-11-27" "EDIScope 2.0" "User Commands"
 .\"------------------------------------------------------------------------
 .SH NAME
-ediscope \- CLI DAB/DAB+ receiver for Linux
+ediscope \- DAB+/EDI diagnostic player
 .\"------------------------------------------------------------------------
 .SH SYNOPSIS
 .B ediscope
-.RI ( options )
-.RI [ file ]
 .\"------------------------------------------------------------------------
 .SH DESCRIPTION
 .B EDIScope
-plays a DAB/DAB+ audio service – from a live transmission or from
-a stored ensemble recording (ETI-NI, or EDI AF with ETI). Both DAB (MP2)
-and DAB+ (AAC-LC, HE-AAC, HE-AAC v2) services are supported.
+receives, plays and inspects a DAB/DAB+ ensemble carried as EDI (AF packets
+with ETI, e.g. from ODR-DabMux) over TCP or UDP (unicast or multicast, with
+PFT and Reed-Solomon FEC), or stored in an ETI-NI or EDI file. Both DAB
+(MP2) and DAB+ (AAC-LC, HE-AAC, HE-AAC v2) services are supported.
+.PP
+Its window shows the ensemble's services and sub-channels (with the CU
+occupancy of the multiplex), the Dynamic Label (with DL Plus) and the MOT
+Slideshow of the selected service, audio level, spectrum, stereo and phase
+correlation meters, the EDI timing (margin delay) and the date/time, and
+gives access to the following tools:
+.TP
+.B Links
+Service linking (FIG 0/6), Frequency Information (FIG 0/21) and OE Services
+(FIG 0/24).
+.TP
+.B RadioDNS
+RadioDNS (ETSI TS 103 270) resolution of every service, stage by stage, and
+the Service Information it leads to.
+.TP
+.B SPI / EPG
+Service and Programme Information (ETSI TS 102 371/102 818) carried in the
+ensemble: services, programme schedules, groups and logos.
+.TP
+.B FIG Analysis
+Repetition of every FIG, checked against the repetition rates of
+ETSI TS 103 176.
+.PP
+The selected service can be recorded (untouched audio stream), and so can
+the whole ensemble, as EDI or as ETI-NI.
+.PP
+A source is chosen in the window: an EDI URI
+.RI ( tcp:// host : port ,
+.RI udp:// host : port
+or
+.RI udp:// multicast-group : port )
+or a file
+.RI ( file:// path ,
+or "Open EDI/ETI File..."). A file is played at the fixed pace of one frame
+per 24 ms, regardless of the timestamps it may carry.
 .\"------------------------------------------------------------------------
-.SH OPTIONS
+.SH KEYS
 .TP
-.B \-h
-Show summary of options
+.B M
+Mute/unmute.
 .TP
-.B \-f <format>
-Source format: "eti" (default), "edi"
+.B R
+Start recording the selected service, or stop the recording in progress.
 .TP
-.B \-d <binary>
-Use DAB live source (using the mentioned binary)
+.BR 1 " ... " 0
+Select the 1st to 10th service (as listed); with
+.BR Alt :
+the 11th to 20th.
 .TP
-.B \-D <type>
-DAB live source type: "dab2eti" (default), "eti-cmdline"
+.BR \- " / " +
+Select the previous/next service.
 .TP
-.B \-c <ch>
-Channel to be played (requires DAB live source)
-.TP
-.B \-l <label>
-Label of the service to be played
-.TP
-.B \-1
-Play the first service found
-.TP
-.B \-s <sid>
-ID of the service to be played
-.TP
-.B \-x <scids>
-ID of the service component to be played (requires service ID)
-.TP
-.B \-r <subchid>
-ID of the sub-channel (DAB) to be played
-.TP
-.B \-R <subchid>
-ID of the sub-channel (DAB+) to be played
-.TP
-.B \-g <gain>
-USB stick gain to pass to DAB live source (auto gain is default)
-.TP
-.B \-G
-Use default gain for DAB live source (instead of auto gain)
-.TP
-.B \-p
-Output raw PCM to stdout instead of using SDL
-.TP
-.B \-w
-Output RIFF WAVE with PCM to stdout instead of using SDL (useful only on Little Endian)
-.TP
-.B \-u
-Output untouched audio stream to stdout instead of using SDL
-.TP
-.B \-I
-Don't catch up on stream after interruption
-.TP
-.B \-F
-Disable dynamic FIC messages (dynamic PTY, announcements)
-.TP
-.B file
-Input file to be played (stdin, if not specified)
+.B Ctrl+C
+Copy the Dynamic Label to the clipboard.
 .\"------------------------------------------------------------------------
-.SH "SEE ALSO"
-.BR ediscope_gtk (1)
+.SH FILES
+.TP
+.I ~/.config/ediscope/ediscope.conf
+Settings: recordings folder, toolbar shortcuts.
+.TP
+.I ~/.config/ediscope/network_history
+The last 20 EDI sources connected to successfully.

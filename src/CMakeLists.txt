@@ -2,6 +2,8 @@
 # Setup apps
 ########################################################################
 
+# the engine: sources, players, decoders - shared by every user interface (sdl_output.cpp is
+# appended to this list by the top-level CMakeLists.txt, unless SDL is disabled)
 list(APPEND ediscope_sources
     dabplus_decoder.cpp
     ensemble_source.cpp
@@ -19,13 +21,6 @@ list(APPEND ediscope_sources
     wav_output.cpp
     fft.cpp
     audio_spectrum_analyzer.cpp
-    )
-
-set(ediscope_cli_sources
-    ediscope.cpp
-    )
-
-set(ediscope_gtk_sources
     mot_manager.cpp
     pad_decoder.cpp
     msc_packet_demux.cpp
@@ -33,24 +28,32 @@ set(ediscope_gtk_sources
     spi_decoder.cpp
     xml_tree.cpp
     radiodns.cpp
-    ediscope_gtk.cpp
-    ediscope_gtk_dl_plus.cpp
-    ediscope_gtk_sls.cpp
-    ediscope_gtk_cu_bar.cpp
-    ediscope_gtk_logs.cpp
-    ediscope_gtk_spi.cpp
-    ediscope_gtk_rdns.cpp
-    ediscope_gtk_links.cpp
-    ediscope_gtk_level_meter.cpp
-    ediscope_gtk_spectrum.cpp
-    ediscope_gtk_stereometer.cpp
-    ediscope_gtk_correlation.cpp
     ecc_countries.cpp
+    fig_analyzer.cpp
+    edi_to_eti.cpp
     )
 
+set(ediscope_qt_sources
+    ediscope_qt_main.cpp
+    ediscope_qt.cpp
+    ediscope_qt_theme.cpp
+    ediscope_qt_services_model.cpp
+    ediscope_qt_cu_bar.cpp
+    ediscope_qt_dl_plus.cpp
+    ediscope_qt_sls.cpp
+    ediscope_qt_meters.cpp
+    ediscope_qt_links.cpp
+    ediscope_qt_rdns.cpp
+    ediscope_qt_spi.cpp
+    ediscope_qt_fig.cpp
+    )
+
+# resolv: res_query()/ns_*() used by radiodns.cpp for raw CNAME/SRV DNS record lookups
+# openssl: TLS transport for radiodns.cpp's HTTPS fetches (see top-level CMakeLists.txt)
 set(common_link_list
     fec
     ${ATOMIC_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${MPG123_LIBRARIES} ${SDL2_LIBRARIES} ${AAC_LIB} ${ICONV_LIBRARIES}
+    resolv ${OPENSSL_LIBRARIES}
     )
 
 include_directories(../fec)
@@ -60,36 +63,28 @@ include_directories(../fec)
 # Build the applications and add install rules.
 ########################################################################
 
-# ediscope
-add_executable(ediscope ${ediscope_sources} ${ediscope_cli_sources})
-target_link_libraries(ediscope ${common_link_list})
+find_program(UPDATE_DESKTOP_DATABASE update-desktop-database)
+find_program(GTK_UPDATE_ICON_CACHE gtk-update-icon-cache)
+
+# ediscope (Qt)
+add_executable(ediscope ${ediscope_sources} ${ediscope_qt_sources})
+set_target_properties(ediscope PROPERTIES AUTOMOC ON)
+target_link_libraries(ediscope ${common_link_list} Qt6::Widgets)
 install(TARGETS ediscope DESTINATION bin)
 
-# ediscope_gtk
-if(GTKMM_FOUND)
-    add_executable(ediscope_gtk ${ediscope_sources} ${ediscope_gtk_sources})
-    # resolv: res_query()/ns_*() used by radiodns.cpp for raw CNAME/SRV DNS record lookups
-    # openssl: TLS transport for radiodns.cpp's HTTPS fetches (see top-level CMakeLists.txt)
-    target_link_libraries(ediscope_gtk ${common_link_list} ${GTKMM_LIBRARIES} resolv ${OPENSSL_LIBRARIES})
-    install(TARGETS ediscope_gtk DESTINATION bin)
-
-    # Also register a desktop launcher + icon for the current user right after every build (not
-    # just on "make install"), pointing straight at this build's own output - so the taskbar/dock
-    # icon keeps working without needing sudo, and self-corrects if the checkout is ever moved or
-    # renamed (its paths are only ever baked in fresh, at build time, never hand-maintained).
-    if(UNIX AND NOT APPLE AND NOT CYGWIN)
-        find_program(UPDATE_DESKTOP_DATABASE update-desktop-database)
-        find_program(GTK_UPDATE_ICON_CACHE gtk-update-icon-cache)
-
-        add_custom_command(TARGET ediscope_gtk POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory "$ENV{HOME}/.local/share/applications"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "$ENV{HOME}/.local/share/icons/hicolor/256x256/apps"
-            COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/res/ediscope-icon.png" "$ENV{HOME}/.local/share/icons/hicolor/256x256/apps/ediscope.png"
-            COMMAND bash -c "printf '[Desktop Entry]\\nType=Application\\nName=EDIScope\\nComment=DAB+/EDI diagnostic player\\nExec=%s\\nIcon=%s\\nTerminal=false\\nStartupWMClass=Ediscope_gtk\\nCategories=AudioVideo;Player;\\n' '$<TARGET_FILE:ediscope_gtk>' '${CMAKE_SOURCE_DIR}/res/ediscope-icon.png' > '$ENV{HOME}/.local/share/applications/ediscope-gtk.desktop'"
-            COMMAND bash -c "[ -x '${UPDATE_DESKTOP_DATABASE}' ] && '${UPDATE_DESKTOP_DATABASE}' '$ENV{HOME}/.local/share/applications' || true"
-            COMMAND bash -c "[ -x '${GTK_UPDATE_ICON_CACHE}' ] && '${GTK_UPDATE_ICON_CACHE}' -f '$ENV{HOME}/.local/share/icons/hicolor' 2>/dev/null || true"
-            COMMENT "Registering EDIScope desktop launcher and icon for the current user"
-            VERBATIM
-            )
-    endif()
+# Also register a desktop launcher + icon for the current user right after every build (not
+# just on "make install"), pointing straight at this build's own output - so the taskbar/dock
+# icon keeps working without needing sudo, and self-corrects if the checkout is ever moved or
+# renamed (its paths are only ever baked in fresh, at build time, never hand-maintained).
+if(UNIX AND NOT APPLE AND NOT CYGWIN)
+    add_custom_command(TARGET ediscope POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$ENV{HOME}/.local/share/applications"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$ENV{HOME}/.local/share/icons/hicolor/256x256/apps"
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/res/ediscope-icon.png" "$ENV{HOME}/.local/share/icons/hicolor/256x256/apps/ediscope.png"
+        COMMAND bash -c "printf '[Desktop Entry]\\nType=Application\\nName=EDIScope\\nComment=DAB+/EDI diagnostic player\\nExec=%s\\nIcon=%s\\nTerminal=false\\nStartupWMClass=ediscope\\nCategories=AudioVideo;Player;\\n' '$<TARGET_FILE:ediscope>' '${CMAKE_SOURCE_DIR}/res/ediscope-icon.png' > '$ENV{HOME}/.local/share/applications/ediscope.desktop'"
+        COMMAND bash -c "[ -x '${UPDATE_DESKTOP_DATABASE}' ] && '${UPDATE_DESKTOP_DATABASE}' '$ENV{HOME}/.local/share/applications' || true"
+        COMMAND bash -c "[ -x '${GTK_UPDATE_ICON_CACHE}' ] && '${GTK_UPDATE_ICON_CACHE}' -f '$ENV{HOME}/.local/share/icons/hicolor' 2>/dev/null || true"
+        COMMENT "Registering EDIScope desktop launcher and icon for the current user"
+        VERBATIM
+        )
 endif()

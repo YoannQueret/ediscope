@@ -3,95 +3,86 @@
 EDIScope is a DAB/DAB+ ETI/EDI player and diagnostic tool built around
 **EDI**: receiving, timing and inspecting an ODR-DabMux EDI output live
 over the network, with real-time pacing and on-screen diagnostics
-(buffering margin, live ensemble changes, CU occupancy, etc.).
+(buffering margin, live ensemble changes, CU occupancy, FIG repetition,
+etc.).
 
-Both a console (`ediscope`) and a GTK GUI (`ediscope_gtk`) version are
-built.
+## Screenshot
 
-## Screenshots
-
-### GTK GUI version
-![Screenshot of the GTK GUI version](doc/ediscope.png)
+![Screenshot of EDIScope](doc/ediscope.png)
 
 
 ## Features
 
 * **EDI network input.** Connect directly to a live TCP or UDP (uni- or
-  multicast) EDI source from the GUI's "Source" box (with PFT/Reed-Solomon
-  FEC fragment reassembly handled transparently), or from the command
-  line with `-f edi`. The GUI remembers the last URIs you connected to
-  (`~/.config/ediscope/network_history`) and can switch to a different
-  mux at any time without restarting - including switching away from
-  whatever was initially given on the command line. See
+  multicast) EDI source from the source box (with PFT/Reed-Solomon FEC
+  fragment reassembly handled transparently). The last 20 sources
+  successfully connected to are remembered, the connection is
+  re-established automatically if it drops, and a different mux can be
+  chosen at any time without restarting. See
   [EDI network input](#edi-network-input).
 
 * **Real-time EDI timestamp pacing and diagnostics.** Each EDI frame's
   embedded ATST/TIST timestamp is decoded and used to play every frame
   at exactly its own scheduled time (rather than just draining the
-  stream as fast as it arrives), and the GUI shows the current
-  **margin delay** (how far ahead of schedule the network is actually
-  delivering frames) live, with the mux's `TIST@FCT0` configuration
-  value available as a tooltip. See
-  [EDI timing diagnostics](#edi-timing-diagnostics).
+  stream as fast as it arrives), and the current **margin delay** (how
+  far ahead of schedule the network is actually delivering frames) is
+  shown live, with the mux's `TIST@FCT0` configuration value available
+  as a tooltip. See [EDI timing diagnostics](#edi-timing-diagnostics).
 
-* **Live ensemble/service monitoring.** A sortable **services table** (SubChId, SID, ECC, label,
-  short label, CUs, protection, bit rate, format/samplerate/audio mode,
-  language, PTY), a **CU occupancy bar** (864 CUs/CIF) with click-to-play
-  and SubChId/SID labels, a live **ECC → country** lookup, and a
-  **log window** recording every hot change to the ensemble (services
-  and sub-channels added/removed on the fly, label/protection/bit rate
-  changes, etc.) with automatic timeout-based removal of services that
+* **Live ensemble/service monitoring.** A sortable **services table**
+  (SubChId, SID, ECC, label, short label, CUs, protection, bit rate,
+  format/samplerate/audio mode, language, PTY, SPI and RadioDNS
+  availability), a **CU occupancy bar** (864 CUs/CIF) with click-to-play,
+  a live **ECC → country** lookup, the connection state and the FIB CRC
+  errors in the status bar, and automatic removal of services that
   disappear from FIG 0/2. See
-  [Services table, CU bar and ensemble log](#services-table-cu-bar-and-ensemble-log).
+  [Services table and CU bar](#services-table-and-cu-bar).
+
+* **FIG analysis.** The repetition of every FIG is measured - per entity:
+  each sub-channel, service, linkage set, frequency entry, label... - and
+  checked against the repetition rates of ETSI TS 103 176, including the
+  CEI and announcement bursts. See [FIG analysis](#fig-analysis).
+
+* **Service following.** Service linking (FIG 0/6), Frequency
+  Information (FIG 0/21) and OE Services (FIG 0/24), cross-referenced
+  with each other. See [Links](#links).
+
+* **RadioDNS.** Every audio service is resolved automatically (ETSI TS
+  103 270), stage by stage, up to its Service Information. See
+  [RadioDNS](#radiodns).
 
 * **SPI (Service and Programme Information) / EPG.** When the ensemble
-  carries an SPI data service (FIG 0/13 User Application EPG, ETSI TS
-  102 371/102 818), EDIScope detects it automatically and decodes its
-  MOT Directory-mode carousel: Service Information (per-service names,
-  DAB bearer, logos), Programme Information (per-day schedules) and
-  Group Information (programme groups), all reachable from a dedicated
-  **SPI** window. The services table also gains "S"/"P" columns marking,
-  per service, whether Service/Programme Information is currently
-  available for it. See
+  carries an SPI data service, EDIScope detects it automatically and
+  decodes its services, programme schedules, groups and logos. See
   [SPI (Service and Programme Information)](#spi-service-and-programme-information).
 
-* **More visualizations.** A frequency **spectrum analyzer** (bubble or
-  bar style, mono or stereo), a stereo **vectorscope/goniometer**, a
-  phase **correlation meter**, and a peak **level meter** are shown
-  alongside Dynamic Label and the Slideshow, all embedded directly in
-  the main window.
+* **Visualizations.** A frequency **spectrum analyzer** (bar or bubble
+  style, mono or stereo), a stereo **vectorscope/goniometer**, a phase
+  **correlation meter** and a peak **level meter**, alongside the
+  Dynamic Label (with DL Plus) and the Slideshow (with the last 4 slides).
 
-* **Slideshow history.** The last 4 slides are kept as a vertical strip
-  of thumbnails next to the current slide (sized to match its height),
-  each with the same right-click menu as the current slide (save the
-  original file, copy the image) plus a "View at normal size" option,
-  and a tooltip with resolution/size/format/content name - so you don't
-  lose a slide just because a newer one replaced it on screen.
+* **Recording.** The current service (untouched audio stream), or the
+  whole ensemble as EDI or as ETI-NI. See [Recording](#recording).
 
 * **No live DAB/RTL-SDR reception.** EDIScope focuses on ETI and EDI
-  *streams* - from a file, from `stdin`, or (for EDI) directly over the
-  network - not on demodulating DAB off the air itself. If you need live
-  SDR reception, pipe a live ETI-NI stream from an external tool into
-  EDIScope instead (see
-  [ETI/EDI live reception via pipe](#etiedi-live-reception-via-pipe)).
+  *streams* - from the network or from a file - not on demodulating DAB
+  off the air itself.
 
 * **Desktop integration.** Its own icon embedded in the binary and a
   `.desktop` entry so it shows up correctly in a taskbar, dock or
-  Alt-Tab switcher - not just as a bare terminal window.
+  Alt-Tab switcher.
 
 
 ## Requirements
 
 ### General
 
-Besides Git a C/C++ compiler (with C++11 support) and CMake are required to
-build EDIScope.
-
-On Debian or Ubuntu, the respective packages (with GCC as C/C++ compiler) can be
-installed using aptitude or apt-get, for example:
+EDIScope targets a current Linux distribution - Debian 13 (trixie) is the
+reference. Besides Git, a C/C++ compiler (with C++17 support) and CMake are
+required to build it:
 
 ```sh
-sudo apt-get install git gcc g++ cmake
+sudo apt install git g++ cmake
 ```
 
 
@@ -99,13 +90,11 @@ sudo apt-get install git gcc g++ cmake
 
 The following libraries are required:
 
+* Qt 6 (Widgets)
 * mpg123 (1.14.0 or higher)
 * FAAD2
 * SDL2
-
-The GTK GUI version in addition requires:
-
-* gtkmm 3
+* OpenSSL (for RadioDNS over HTTPS)
 
 Usually the `glibc` implementation of `iconv` is available. If this is
 not the case, in addition `libiconv` is required.
@@ -114,47 +103,21 @@ In rare cases, the target architecture does not support *atomics*. In
 such a case, EDIScope is linked against GCC's `libatomic`. This lib
 usually is an (indirect) dependency of GCC itself.
 
-On Debian or Ubuntu, mpg123, FAAD2, SDL2 and gtkmm are packaged and installed
-with:
+On Debian 13 they are installed with:
 
 ```sh
-sudo apt-get install libmpg123-dev libfaad-dev libsdl2-dev libgtkmm-3.0-dev
+sudo apt install qt6-base-dev libmpg123-dev libfaad-dev libsdl2-dev libssl-dev
 ```
-
-On Fedora, mpg123, SDL2, and gtkmm are all packaged and can be installed thus:
-
-```sh
-sudo dnf install mpg123-devel SDL2-devel gtkmm30-devel
-```
-
-FAAD2 is not packaged in the main Fedora repository, but it is available in
-[RPM Fusion repository](https://rpmfusion.org/). Once you have added RPM Fusion
-to the repositories, FAAD2 may be installed by:
-
-```sh
-sudo dnf install faad2-devel
-```
-
-If you do not wish to, or cannot, add the RPM Fusion repositories, you will have
-to download FAAD2, perhaps from [here](http://www.audiocoding.com/faad2.html), and build
-and install manually.
-
 
 ### Alternative DAB+ decoder
 
 Instead of using FAAD2, DAB+ channels can be decoded with [FDK-AAC](https://github.com/mstorsjo/fdk-aac).
 You can also use [OpenDigitalradio's fork](https://github.com/Opendigitalradio/fdk-aac), if already installed.
 
-On Debian and Ubuntu, you can install FDK-AAC with:
+On Debian 13, FDK-AAC is installed with:
 
 ```sh
-sudo apt-get install libfdk-aac-dev
-```
-
-On Fedora, RPM Fusion is again needed and, if used, you can:
-
-```sh
-sudo dnf install fdk-aac-devel
+sudo apt install libfdk-aac-dev
 ```
 
 When the alternative AAC decoder is used, the FAAD2 library mentioned
@@ -166,29 +129,7 @@ have `-DUSE_FDK-AAC=1` as part of the `cmake` command.
 
 ### Audio output
 
-The SDL2 library is used for audio output, but you can instead choose to
-output the decoded audio in plain PCM for further processing (e.g. for
-forwarding to a streaming server).
-
-In case you only want PCM output, you can disable SDL output and
-therefore omit the SDL2 library prerequisite. You then also have to
-have `-DDISABLE_SDL=1` as part of the `cmake` command.
-
-To enable the raw PCM output to `stdout`, the `-p` parameter has to be used.
-
-The PCM audio can also be prepended with a RIFF WAVE header using the `-w`
-parameter instead. This uses the maximum value for length fields in order to
-allow streaming. On any later audio format change (this also includes a service
-change in the GUI version), a new RIFF WAVE header will be issued. As RIFF WAVE
-requires samples to be in Little Endian (LE) order, this feature only makes
-sense on a LE platform.
-
-It is also possible to disable the output of any decoded audio and
-instead output the current service as an untouched MP2/AAC stream to
-`stdout`. This can be achieved by using the `-u` parameter.
-
-
-### Surround sound
+The decoded audio is played through SDL2.
 
 Services with surround sound are only decoded from their Mono/Stereo
 core, as unfortunately there is no FOSS AAC decoder which supports the
@@ -197,10 +138,6 @@ moment.
 
 
 ## Compilation
-
-If the gtkmm library is available both the console and GTK GUI
-executables will be built, otherwise only the console executable will be
-built.
 
 From this repository's root:
 
@@ -212,13 +149,27 @@ make
 sudo make install
 ```
 
-This produces `src/ediscope` (console) and, if gtkmm was found,
-`src/ediscope_gtk` (GTK GUI).
+This produces `src/ediscope`. Each build also registers a desktop
+launcher and the icon for the current user, pointing at the build's own
+output.
+
+
+## Usage
+
+Start EDIScope from the applications menu (or run `ediscope`) and choose
+a source in the source box (see below).
+
+The **Tools** menu opens the Links, RadioDNS, SPI / EPG and FIG Analysis
+windows. Up to three of them can also be given a shortcut button in the
+toolbar.
+
+**Settings** holds the recordings folder and the choice of toolbar
+shortcuts. They are kept in `~/.config/ediscope/ediscope.conf`.
 
 
 ### EDI network input
 
-In the GTK version's "Source" box, enter an EDI URI and click "Connect":
+In the source box, enter an EDI URI and click "Connect" (or press Enter):
 
 * `tcp://host:port`
 * `udp://host:port` (unicast)
@@ -226,16 +177,19 @@ In the GTK version's "Source" box, enter an EDI URI and click "Connect":
 
 PFT fragments (ETSI TS 102 821 Annex B), if used by the sender, are
 reassembled transparently, including Reed-Solomon FEC correction of
-missing fragments. The last 10 URIs you connected to are remembered
-across restarts (`~/.config/ediscope/network_history`). Clicking
-"Disconnect" (or connecting to a different URI) stops the current
-source and switches over cleanly, whether it was a network source, a
-file, or `stdin`.
+missing fragments. If a TCP connection drops (e.g. the mux restarts),
+EDIScope reconnects by itself every 5 seconds.
 
-From the console version, use `-f edi` with a TCP/UDP stream piped or
-redirected into it (see
-[ETI/EDI live reception via pipe](#etiedi-live-reception-via-pipe)
-for examples) - there is no interactive network UI on the console.
+The last 20 sources successfully connected to - those from which at
+least one frame was received, so a mistyped one never ends up there -
+are remembered across restarts (`~/.config/ediscope/network_history`).
+Clicking "Disconnect" (or connecting to a different source) stops the
+current one and switches over cleanly.
+
+The source box also takes a file - `file:///path/to/file.eti` (or
+`.edi`), or "Open EDI/ETI File..." from its drop-down. A file is played
+at the fixed pace of one frame per 24 ms, regardless of the timestamps
+its frames may carry.
 
 
 ### EDI timing diagnostics
@@ -251,35 +205,91 @@ frame replayed in a mux's initial TCP preroll burst) is dropped instead
 of being rushed through, so reconnecting to a mux doesn't cause a burst
 of fast-forwarded, glitchy audio.
 
-The GTK version's "Margin delay" box shows, live, how far ahead of its
+The "Margin" figure in the status bar shows, live, how far ahead of its
 own schedule the network is currently delivering frames - this should
 settle close to (but just under) zero minus the mux's `tist_offset`,
-net of real network latency, and will naturally jitter with it. Hovering
-over the box shows the `TIST@FCT0` value observed on the wire (the
+net of real network latency, and will naturally jitter with it. Its
+tooltip shows the `TIST@FCT0` value observed on the wire (the
 fractional-second part of the timestamp at FCT 0), letting you verify a
-mux's `tist_at_fct0` configuration directly from the stream. The
-console version prints the same two figures, plus the actual end-to-end
-buffering delay once each frame is played, to `stderr`.
+mux's `tist_at_fct0` configuration directly from the stream.
 
 
-### Services table, CU bar and ensemble log
+### Services table and CU bar
 
-The GTK version's "Services details" table lists every service
-currently in the ensemble (SubChId, SID, ECC - with a country name
-looked up when known, label, short label, CUs, protection, bit rate,
-format/samplerate/audio mode, language, PTY), sortable by any column.
-Below it, the CU occupancy bar shows all 864 CUs/CIF, labelled by
-SubChId/SID and colour-coded by sub-channel; clicking a segment plays
-that service directly. Both are locked (insensitive) while a recording
-is in progress, so the service being recorded can't be switched away
-from by mistake.
+The services table lists every service currently in the ensemble
+(SubChId, SID, ECC - with a country name looked up when known - label,
+short label, CUs, protection, bit rate, format/samplerate/audio mode,
+language, PTY), sortable by any column. Data-only sub-channels (e.g. an
+EPG) are listed too, in italics, so that their CUs are accounted for.
+The "SPI/SI", "SPI/PI" and "rDNS" columns mark whether SPI has Service
+Information or at least one day of Programme Information for the
+service, and whether its RadioDNS resolution succeeded.
+
+Below it, the CU occupancy bar shows all 864 CUs/CIF, one block per
+sub-channel (the selected service's outlined, data sub-channels
+hatched), with the number of CUs used and free; hovering a block shows
+its service, and clicking it plays that service. Both are locked while a
+service is being recorded, so it can't be switched away from by mistake.
 
 Services and sub-channels that disappear from FIG 0/2 are automatically
-removed after a timeout, rather than lingering forever. The "Logs"
-button opens a separate window recording every such hot change to the
-ensemble as it happens - services or sub-channels appearing/disappearing,
-label changes, protection/bit rate changes, etc. - which is otherwise
-easy to miss on a live mux.
+removed after a timeout, rather than lingering forever.
+
+
+### FIG analysis
+
+The "FIG Analysis" window shows how often every FIG is repeated, checked
+against ETSI TS 103 176 (clause 4 and table 1):
+
+* MCI (FIG 0/0, 0/1, 0/2, 0/3, 0/7, 0/14): all of it every 96 ms;
+  FIG 0/8 and FIG 0/13: at least every second (for FIG 0/8, as in the
+  standard's annex F);
+* SI (FIG 0/5, 0/9, 0/10, 0/17, 0/18, 0/20, 0/25, FIG 1/x, FIG 2/x):
+  once per second;
+* FIG 0/6, 0/21, 0/24: all of the database at least every 2 minutes, the
+  activation state of each linkage set at least every 10 seconds, and
+  each change event indication (CEI) once per second for 5 seconds;
+* FIG 0/19, 0/26: the start of an announcement 10 times per second for 5
+  seconds, its continuation once per second, its end 10 times per second
+  for 2 seconds.
+
+The repetition is measured per entity (each sub-channel, service,
+component, linkage set, frequency entry, label, ...), as the standard
+phrases it, and time is counted in frames, so network jitter doesn't
+affect it. Each requirement gets a verdict: ✓ at the nominal rate, ~
+slower but not below one third of it (the minimum the standard allows),
+✗ below, or "…" while the observation is still too short to tell.
+Selecting a requirement shows its measurement per entity, or per event
+for the bursts.
+
+The window also lists every FIG seen (count, rate, bytes, longest
+interval) and every burst (CEI, announcements) with its own verdict,
+together with the FIC load, the FIB CRC errors and - from the number of
+service components - what the FIC capacity allows according to the
+standard. The analysis runs all the time, from the moment a source is
+started; "Reset" starts it again.
+
+
+### Links
+
+The "Links" window shows the service following information of the
+ensemble: for each service, the linkage set it is the key service of
+(FIG 0/6) with its members, every Frequency Information entry (FIG 0/21)
+and every OE Services entry (FIG 0/24). A DAB member of a linkage set is
+cross-referenced against FIG 0/24 to find the ensemble(s) carrying it,
+and from there against FIG 0/21 to find their frequencies. Services of
+another ensemble named by a linkage set are listed too. Any cell or row
+can be copied with a right-click.
+
+
+### RadioDNS
+
+Every audio service is resolved automatically (ETSI TS 103 270) as soon
+as its broadcast parameters are known. The "RadioDNS" window shows, per
+service, how far the resolution got - the RadioDNS FQDN, the DNS CNAME,
+the DNS SRV of its SPI application, and the HTTP(S) fetch of its SI.xml -
+and, once resolved, what the SI.xml says about it: names, descriptions,
+logos (shown full size on hover), bearers (copied with a right-click,
+streams can be opened) and the document itself.
 
 
 ### SPI (Service and Programme Information)
@@ -289,29 +299,22 @@ user application (ETSI TS 102 371 clause 6.2), EDIScope automatically
 locks onto its MSC packet-mode sub-channel, reassembles the underlying
 MOT Directory-mode carousel (ETSI EN 301 234 clause 7.2) and decodes
 whichever SPI binary objects (ETSI TS 102 371 clause 5 / ETSI TS 102
-818) it finds inside - no action required from you.
+818) it finds inside - no action required from you. As the carousel
+repeats slowly, the services and their logos can take a minute or more
+to arrive, the schedules even longer.
 
-Clicking "SPI" opens a window with four tabs:
+The "SPI / EPG" window has four tabs:
 
-* **Services** - a grid of cards, one per service known to the SPI
-  Service Information (SI) document: its name(s), the DAB bearer it
-  refers to, and any logos (shown once the corresponding image object
-  has itself been fully received from the same carousel).
+* **Services** - one card per service known to the SPI Service
+  Information (SI) document: its name, the DAB bearer it refers to, and
+  its logos (shown full size on hover).
 * **Programme** - a per-service day timeline built from that service's
   own Programme Information (PI) schedule object(s) - one exists per
   service per day - picked from a drop-down.
-* **Groupes** - a grid of cards, one per programme group described by
-  the ensemble's Group Information (GI) document (series, shows,
-  magazines, etc.).
+* **Groups** - one card per programme group described by the ensemble's
+  Group Information (GI) document (series, shows, magazines, etc.).
 * **XML** - a reconstruction, as readable XML, of whichever of the
-  three document types above you pick from a drop-down - not the
-  original wire bytes (a proprietary binary tree, not XML) but a
-  faithful rendering of everything the decoder extracted from them.
-
-The main "Services details" table also gains two columns, "S" and "P",
-marking with a checkmark whether SPI currently has, respectively,
-Service Information or at least one day of Programme Information for
-that row's service.
+  three document types above you pick from a drop-down.
 
 Compressed MOT directories (data group type 7) are not supported, as
 ETSI TS 102 371 forbids a mux from using them for SPI in the first
@@ -320,13 +323,9 @@ place.
 
 ### Date/Time
 
-The console version shows the related parameters as they are received:
-While the Local Time Offset (LTO) is shown upon any change, the UTC
-date/time is shown once (or once again on precision change).
-
-The GTK version in contrast starts to display the local date/time as
-soon as both mentioned values have been received. The used clock is then
-resynchronised upon further received UTC date/time.
+The local date/time is displayed in the status bar as soon as both the
+UTC date/time and the Local Time Offset (LTO) have been received. The
+clock is then resynchronised upon further received UTC date/time.
 
 If an ensemble transmits both short (minute precision) and long (millisecond
 precision) form, only the long form will be used, as soon as received for the
@@ -335,104 +334,55 @@ first time.
 
 ### Announcement support/switching
 
-In terms of announcement support/switching the console version shows the
-separate details. The GUI combines the received data and in general
-shows which announcements the current service supports.
+The status bar shows which announcements the current service supports.
+During a matching announcement, its type is highlighted and marked with
+▶; an announcement that would lead to a (temporary) switch to a
+different sub-channel is marked with ◆ instead, e.g. if traffic news of
+a different channel shall affect also listeners of a different service
+(which does not have its own announcements).
 
-During a matching announcement, the corresponding type is highlighted in
-yellow. An announcement that would lead to a (temporary) switch to a
-different subchannel leads to cyan highlighting instead e.g. if traffic
-news of a different channel shall affect also listeners of a different
-service (which does not have its own announcements).
-
-The GTK version indicates an active alarm announcement on ensemble level
-by the suffix "Alarm" after the ensemble label, highlighted in red.
+An active alarm announcement on ensemble level is indicated by "⚠ Alarm"
+after the ensemble label, highlighted in red.
 
 
-### Hotkeys (GTK GUI version)
+### Hotkeys
 
 Hotkey           | Meaning
 -----------------|--------------------------------------------------------------
 `m`              | Enable/disable audio mute
-`r`              | Start/stop recording
-`Ctrl` + `c`     | Copy DL text, DL+ object text or Slideshow slide to clipboard
+`r`              | Start recording the current service / stop the recording
+`Ctrl` + `c`     | Copy the Dynamic Label text to the clipboard
 `-`              | Switch to previous service
 `+`              | Switch to next service
 `1`..`0`         | Switch to 1st..10th service
 `Alt` + `1`..`0` | Switch to 11th..20th service
 
-
-### ETI/EDI live reception via pipe
-
-EDIScope has no built-in live DAB/RTL-SDR receiver - it focuses on playing
-back ETI/EDI streams, whether from a file or piped in live. If you want to
-play a live station, pipe an ETI-NI stream from an external tool such as
-`dab2eti` from [dabtools](https://github.com/Opendigitalradio/dabtools)
-(ODR maintained fork) into it, e.g.:
-
-```sh
-dab2eti 216928000 | ediscope_gtk
-```
-
-It may happen that an ETI live stream is interrupted (e.g. transponder
-lock lost). Later when the stream recovers, EDIScope "catches up" on the
-stream and plays all (available) ETI frames until again in sync. This
-can lead to several audio buffer overflow messages and respective
-audible artifacts.
-
-The `-I` parameter disables the described catch-up behaviour and instead
-resyncs to the stream after an interruption i.e. continues to play the
-later received ETI frames in realtime. However, this means that the
-playback is delayed by the amount of all previous interruptions i.e. the
-news will start some seconds/minutes later compared to live reception
-because of that.
-
-The `stdin` input can also be used for live reception or playback of an
-EDI AF stream/recording (containing ETI) e.g. with Netcat, Wget or cURL.
-Hereby the AF layer may also be enclosed with a File IO layer (usually
-the case for stored EDI transmissions).
-
-Examples:
-
-```sh
-nc 10.0.0.128 9201 | ediscope_gtk -f edi -I
-```
-
-```sh
-wget -q -O - https://edistream.irt.de/services/3 | ediscope_gtk -f edi -I -1
-```
-
-```sh
-curl -s https://edistream.irt.de/services/3 | ediscope_gtk -f edi -I -1
-```
-
-Playing EDI content the `-I` can be required to prevent ongoing hiccups
-during playback. In the last two cases, a single service EDI stream for
-testing purposes is used, so the `-1` parameter is used to select the
-first found service.
-
-Note that EDI received this way (piped as a raw AF/PFT byte stream) does
-not go through the same timestamp-based pacing as a direct TCP/UDP
-network connection described in
-[EDI network input](#edi-network-input) - the ATST is still decoded and
-shown, but pacing on an arbitrary pipe falls back to the fixed-rate
-catch-up behaviour described above.
+The hotkeys don't apply while typing in the source box.
 
 
-### Recording a service
+### Recording
 
-With the GTK GUI version the current service can be recorded into a
-file. To start/stop a recording, the red record button has to be
-clicked, or the corresponding keyboard shortcut to be pressed. During a
-recording neither can the service be changed, nor can EDIScope be
-closed.
+The "Record" menu starts a recording:
 
-By default all recordings are stored to `/tmp`. This can be changed by
-using the `-r` parameter. The filename of a recording contains the
-timestamp of the start of the recording and the service name, e.g.
-`2018-09-02 - 17-53-54 - SWR3.aac`.
+* **Record current service** (`r`) - the current service's audio, as
+  broadcast;
+* **Record ensemble as EDI (.edi)** - every EDI AF packet as received
+  (EDI sources only);
+* **Record ensemble as ETI (.eti)** - every frame as ETI-NI: converted
+  from EDI, or as received from an ETI source. EDIScope can play it back.
 
-All recordings are lossless: A DAB service is directly stored in MP2
+One recording runs at a time. It is stopped from the "Record" menu, with
+`r`, or with the "Stop recording" button of the toolbar; a summary of
+the recording (file, type, duration, size) is then shown. While the
+current service is being recorded, the service can't be changed; while
+any recording is in progress, EDIScope can't be closed.
+
+Recordings are stored in the folder chosen in Settings (`/tmp` by
+default). The filename of a recording
+contains the timestamp of the start of the recording and the service or
+ensemble name, e.g. `2018-09-02 - 17-53-54 - SWR3.aac`.
+
+Service recordings are lossless: A DAB service is directly stored in MP2
 format. A DAB+ service is packaged into the LATM/LOAS container format.
 This format is necessary in order to signal the special 960 samples per
 frame transformation to the AAC decoder for playback.
@@ -440,117 +390,60 @@ frame transformation to the AAC decoder for playback.
 As both formats are streamable, a recording can already be played while
 the actual recording is still in progress.
 
-The AAC recordings can be player e.g. by VLC player. FFmpeg will play
+The AAC recordings can be played e.g. by VLC player. FFmpeg will play
 them as well, but currently does not support the SBR extension together
 with the 960 samples per frame transformation and will thus only play
 the AAC core then.
-
-It is possible to enable a recording prebuffer which continuously caches
-a certain period of time. This allows to record e.g. an already running
-song or bloopers. When an actual recording is started, the complete
-prebuffer content is initially written to the recording file. The
-prebuffer size in seconds is specified using `-P` e.g. `-P 600` for ten
-minutes.
-
 
 ### Secondary component audio services
 
 Some ensembles may contain audio services that consist of additional
 "sub services" called secondary components, in addition to the primary
-component. That secondary components can initially be selected by using
-`-x` in addition to `-s`.
+component.
 
-In the GTK version in the service list such components are shown
-prefixed with `» ` (e.g. `» BBC R5LiveSportX`). Meanwhile, the related
-primary component is suffixed with ` »` (e.g. `BBC Radio 5 Live »`).
+In the services table such components are shown prefixed with `» `
+(e.g. `» BBC R5LiveSportX`). Meanwhile, the related primary component is
+suffixed with ` »` (e.g. `BBC Radio 5 Live »`).
 
 
 ### Dynamic Label Plus (DL+)
 
-When in the GTK GUI version DL+ is enabled and DL+ objects are received,
-the DL+ panel (embedded in the main window) is shown. Some stations only
-transmit DUMMY objects - in this case the DL+ panel will be shown but
-stays empty.
+When DL+ objects are received, they are listed in the Dynamic Label Plus
+panel. Some stations only transmit DUMMY objects - in this case the
+panel stays empty.
 
 If the running state indicates that the current item is running, all
-objects with an ITEM content type have a content type with light green
-background color.
+objects with an ITEM content type are marked with ▶ and highlighted.
 
 Depending on the object category, the object text is highlighted in bold
-text or a different text color. Deleted objects have a text with grey
-background color.
+text or a different text color. Deleted objects are struck through and
+greyed out.
 
 
 ### Slideshow
 
-The GTK GUI version supports the MOT Slideshow, embedded in the main
-window. If Slideshow is enabled and the current service signals to
-transmit a Slideshow, a slide is shown after it has been received
-completely and without errors.
+The MOT Slideshow is shown in the main window. If the current service
+signals to transmit a Slideshow, a slide is shown after it has been
+received completely and without errors.
 
-While the next slide is being received, a progress bar at the bottom of
-the Slideshow panel shows the fraction that has successfully been
-received so far. It is always updated after a new segment has arrived
-free from error. The first segments of the initial slide usually are
-received before the corresponding header comes by. In this case a
-pulsing bar is shown until the header is available.
+While the next slide is being received, the progress bar below the slide
+shows the fraction that has successfully been received so far. It is
+always updated after a new segment has arrived free from error. The
+first segments of the initial slide usually are received before the
+corresponding header comes by. In this case a busy indicator is shown
+until the header is available.
 
 The last 4 slides shown before the current one are kept as a vertical
-strip of thumbnails to its right, sized so the strip's total height
-matches the current slide's. Right-clicking the current slide or any
-thumbnail offers to save the original file to disk or copy the image to
-the clipboard; thumbnails additionally offer "View at normal size" in a
-popup, since they're too small on their own to make out any detail.
-Hovering over the current slide or a thumbnail shows its resolution,
-file size, format and content name as a tooltip.
+strip of thumbnails to its right. Hovering over the current slide or a
+thumbnail shows it at full size with its resolution, file size, format,
+content name and ClickThroughURL (if any). Right-clicking it offers to
+save the original file to disk or copy the image to the clipboard;
+thumbnails additionally offer "View at normal size".
 
 Currently the following limitations apply:
 
 * slideshows in a separate sub-channel are not supported (just X-PAD);
 * the TriggerTime field does not support values other than Now
-
-
-## Status output
-
-While playback a number of status messages may appear. Some are quite common
-(enclosed with round brackets) e.g. due to bad reception, while others are
-rather unlikely to occur (enclosed with square brackets).
-
-### Common
-
-During (re-)synchronisation status messages are shown. Furthermore, dropped
-Superframes or AUs are mentioned.
-
-If the Reed Solomon FEC was used to correct bytes of a Superframe, this
-is mentioned by messages of the format `(3+)` in cyan color. This
-shorter format is used as those messages occur several times with
-borderline reception. The digit refers to the number of corrected bytes
-within the Superframe while a plus (if present) indicates that at least
-one byte was incorrectable.
-
-When a FIB is discarded (due to failed CRC check), this is indicated by a
-`(FIB)` message in yellow color.
-
-MP2 frames with invalid CRC (MP2's CRC only - not DAB's ScF-CRC) are
-discarded, which is indicated by a `(CRC)` message in red color.
-
-Audio Units (AUs) with invalid CRC are mentioned with short format
-messages like `(AU #2)` in red color, indicating that the CRC check on
-AU No. 2 failed and hence the AU was dismissed.
-
-When the decoding of an AU nevertheless fails, this is indicated by an
-`(AAC)` message in magenta color. However, in that case the AAC decoder
-may output audio samples anyway.
-
-### Uncommon
-
-If the announced X-PAD length of a DAB+ service does not match the available
-X-PAD length i.e. if it falls below, a red `[X-PAD len]` message is shown and
-the X-PAD is discarded. However not all X-PADs may be affected and hence it may
-happen that the Dynamic Label can be processed but the MOT Slideshow cannot.
-
-To anyhow process affected X-PADs, a loose mode can be enabled by using
-the `-L` parameter.
 
 
 ## Standards
@@ -562,17 +455,20 @@ EDIScope implements (at least partly) the following DAB standards:
 * ETSI TS 101 756 (Registered tables)
 * ETSI TS 103 466 (DAB audio)
 * ETSI TS 102 563 (DAB+ audio)
-* ETSI ETS 300 799 (ETI)
+* ETSI ETS 300 799 (ETI), including the conversion of EDI to ETI-NI
 * ETSI TS 102 693 (EDI), including its ATST/TIST timestamp fields,
   together with ETSI TS 102 821 (DCP), including its Annex B PFT/FEC
   fragmentation
+* ETSI TS 103 176 (Rules of implementation; service information
+  features): FIG repetition rates, service following
 
-### Data applications
+### Data applications and services
 * ETSI TS 102 980 (Dynamic Label Plus)
 * ETSI EN 301 234 (MOT, including Directory mode, clause 7.2)
 * ETSI TS 101 499 (MOT Slideshow)
 * ETSI TS 102 371 (SPI - transport, including FIG 0/13 EPG signalling)
 * ETSI TS 102 818 (SPI - XML Schema/content model)
+* ETSI TS 103 270 (RadioDNS Hybrid Radio)
 
 
 ## License

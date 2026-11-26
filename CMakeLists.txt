@@ -33,6 +33,7 @@ add_subdirectory(fec)
 # version derived from git (if possible)
 execute_process(
 	COMMAND git describe --dirty
+	WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 	OUTPUT_VARIABLE VERSION_FROM_GIT
 	ERROR_QUIET
 	OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -49,15 +50,16 @@ endif()
 # Compiler specific setup
 ########################################################################
 
+# C++17 (required by Qt 6) - set through CMAKE_CXX_STANDARD, so it only applies to the C++ sources
+# and doesn't leak onto the bundled fec library's plain C sources
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set(CMAKE_COMPILER_IS_CLANGXX 1)
 endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_COMPILER_IS_CLANGXX)
-    # C++11 - CXX-only, so it doesn't leak onto the bundled fec library's plain C sources and
-    # trigger "valid for C++/ObjC++ but not for C"
-    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-std=c++0x>)
-
     # warnings
     add_compile_options(-Wall)
     add_compile_options(-Wextra)
@@ -108,18 +110,14 @@ pkg_check_modules(MPG123 libmpg123 REQUIRED)
 include_directories(${MPG123_INCLUDE_DIRS})
 link_directories(${MPG123_LIBRARY_DIRS})
 
-# gtkmm 3.0
-pkg_check_modules(GTKMM gtkmm-3.0)
-if(GTKMM_FOUND)
-    include_directories(${GTKMM_INCLUDE_DIRS})
-    link_directories(${GTKMM_LIBRARY_DIRS})
+# Qt 6 Widgets - the ediscope application itself
+find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
-    # openssl - TLS transport only (for radiodns.cpp's HTTPS logo/SI.xml fetches); all actual
-    # DAB/EDI/RadioDNS protocol parsing stays hand-rolled
-    pkg_check_modules(OPENSSL openssl REQUIRED)
-    include_directories(${OPENSSL_INCLUDE_DIRS})
-    link_directories(${OPENSSL_LIBRARY_DIRS})
-endif()
+# openssl - TLS transport only (for radiodns.cpp's HTTPS logo/SI.xml fetches); all actual
+# DAB/EDI/RadioDNS protocol parsing stays hand-rolled
+pkg_check_modules(OPENSSL openssl REQUIRED)
+include_directories(${OPENSSL_INCLUDE_DIRS})
+link_directories(${OPENSSL_LIBRARY_DIRS})
 
 if(USE_FDK-AAC)
     # fdk-aac / fdk-aac-dabplus
@@ -172,20 +170,18 @@ endif()
 add_subdirectory(src)
 add_subdirectory(doc)
 
-if(GTKMM_FOUND)
-    install(FILES res/ediscope-icon.png DESTINATION share/icons/hicolor/256x256/apps RENAME ediscope.png)
-    install(FILES res/ediscope-gtk.desktop DESTINATION share/applications)
+install(FILES res/ediscope-icon.png DESTINATION share/icons/hicolor/256x256/apps RENAME ediscope.png)
+install(FILES res/ediscope.desktop DESTINATION share/applications)
 
-    # refresh the icon/desktop caches as part of "make install" itself, so a newly installed or
-    # changed icon shows up right away, without a separate manual step after sudo make install
-    find_program(UPDATE_DESKTOP_DATABASE update-desktop-database)
-    find_program(GTK_UPDATE_ICON_CACHE gtk-update-icon-cache)
-    if(UPDATE_DESKTOP_DATABASE)
-        install(CODE "execute_process(COMMAND \"${UPDATE_DESKTOP_DATABASE}\" \"${CMAKE_INSTALL_PREFIX}/share/applications\")")
-    endif()
-    if(GTK_UPDATE_ICON_CACHE)
-        install(CODE "execute_process(COMMAND \"${GTK_UPDATE_ICON_CACHE}\" -f \"${CMAKE_INSTALL_PREFIX}/share/icons/hicolor\")")
-    endif()
+# refresh the icon/desktop caches as part of "make install" itself, so a newly installed or
+# changed icon shows up right away, without a separate manual step after sudo make install
+find_program(UPDATE_DESKTOP_DATABASE update-desktop-database)
+find_program(GTK_UPDATE_ICON_CACHE gtk-update-icon-cache)	# the desktop's hicolor icon cache tool, despite its name
+if(UPDATE_DESKTOP_DATABASE)
+    install(CODE "execute_process(COMMAND \"${UPDATE_DESKTOP_DATABASE}\" \"${CMAKE_INSTALL_PREFIX}/share/applications\")")
+endif()
+if(GTK_UPDATE_ICON_CACHE)
+    install(CODE "execute_process(COMMAND \"${GTK_UPDATE_ICON_CACHE}\" -f \"${CMAKE_INSTALL_PREFIX}/share/icons/hicolor\")")
 endif()
 
 ########################################################################
@@ -195,9 +191,6 @@ message(STATUS "")
 message(STATUS "##########################################################")
 message(STATUS "## Building version: ${VERSION_OUTPUT}")
 message(STATUS "## Using install prefix: ${CMAKE_INSTALL_PREFIX}")
-if(NOT GTKMM_FOUND)
-    message(STATUS "## gtkmm not found, thus do not build ediscope_gtk")
-endif()
 message(STATUS "##########################################################")
 message(STATUS "")
 

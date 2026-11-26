@@ -26,6 +26,7 @@ EDIPlayer::EDIPlayer(AudioOutputType audio_output_type, bool disable_int_catch_u
 		: EnsemblePlayer(audio_output_type, disable_int_catch_up, observer) {
 	do_exit = false;
 	flush_generation = 0;
+	ignore_timestamps = false;
 	last_margin_delay_ms = 0.0;
 	last_buffer_delay_ms = 0.0;
 	last_tist_at_fct0_ms = 0.0;
@@ -57,6 +58,15 @@ void EDIPlayer::Flush() {
 
 	// a frame already being decoded finishes first; any later one sees the new generation
 	std::lock_guard<std::mutex> lock(playback_mutex);
+}
+
+void EDIPlayer::SetIgnoreTimestamps(bool ignore) {
+	ignore_timestamps = ignore;
+
+	// back to EnsemblePlayer::ProcessFrame's own fixed 24 ms pace, starting afresh - it only stands
+	// aside while frames carry timestamps (has_edi_timing, set by ReportEDITiming)
+	has_edi_timing = false;
+	next_frame_time = std::chrono::steady_clock::time_point();
 }
 
 void EDIPlayer::DecodeFrame(const uint8_t *edi_frame) {
@@ -122,8 +132,10 @@ void EDIPlayer::DecodeFrame(const uint8_t *edi_frame) {
 	bool has_time = false;
 	int fct = -1;
 
+	// playing a file: its timestamps are ignored altogether - the frame is queued without one (so
+	// it's played right away) and nothing is reported, so ProcessFrame keeps pacing at 24 ms
 	size_t tag_item_len_bytes;
-	for(size_t i = 0; i < len - 8; i += tag_item_len_bytes) {
+	for(size_t i = 0; !ignore_timestamps && i < len - 8; i += tag_item_len_bytes) {
 		const uint8_t* tag_item = edi_frame + 10 + i;
 
 		std::string tag_name((const char*) tag_item, 4);
@@ -328,7 +340,7 @@ void EDIPlayer::PlaybackFrame(const uint8_t *edi_frame) {
 			// FCT (frame count, 0..249) - low byte of the detiHeader; the high 5 bits of
 			// tag_value[0] (below ATSTF/FICF/RFUDF) hold FCTH, extending it to a 0..4999 counter,
 			// not needed here
-			if(atstf) {
+			if(atstf && !ignore_timestamps) {
 				// ATST - see EDIPlayer::DecodeFrame for the byte layout/decode reference
 				const uint8_t *atst = tag_value + 2 + 4;
 				uint8_t utco = atst[0];

@@ -610,7 +610,7 @@ public:
 	void CheckServiceTimeouts();
 
 	// database keys for fic_service_linking_sets_t/fic_frequency_infos_t - also used by consumers
-	// (e.g. the GTK Links window) to cross-reference a FIG 0/6 member against FIG 0/21 entries
+	// (e.g. the Links window) to cross-reference a FIG 0/6 member against FIG 0/21 entries
 	static int ServiceLinkingKey(bool pd, bool hard_link, bool international, int lsn);
 	static int FrequencyInfoKey(bool oe, uint32_t id, int rm);
 	static int64_t OEServiceKey(bool oe, bool pd, uint32_t sid);
