@@ -111,7 +111,7 @@ void EDIScopeGTKCUBar::RebuildEntries() {
 	}
 
 	// any remaining sub-channel (most commonly a data service, e.g. EPG) still occupies
-	// real CU capacity even though dablin can't play it - shown as a distinct block
+	// real CU capacity even though EDIScope can't play it - shown as a distinct block
 	// (with its SId, if known), so the bar's background doesn't misleadingly look free there
 	for(const std::pair<const int, FIC_SUBCHANNEL>& sc : subchannels) {
 		if(sc.second.IsNone() || sc.second.pl.empty() || handled_subchids.find(sc.first) != handled_subchids.end())

@@ -1,7 +1,4 @@
 /*
-    DABlin - capital DAB experience
-    Copyright (C) 2016-2019 Stefan Pöschel
-
     EDIScope - DAB+/EDI diagnostic player
     Copyright (C) 2025-2026 Yoann Queret
 
@@ -21,9 +18,8 @@
 
 #include "version.h"
 
-void fprint_dablin_banner(FILE *f) {
-	fprintf(f, "EDIScope v%s\n", DABLIN_VERSION);
+void fprint_ediscope_banner(FILE *f) {
+	fprintf(f, "EDIScope v%s\n", EDISCOPE_VERSION);
 	fprintf(f, "Plays a DAB/DAB+ audio service from an ETI-NI or an EDI AF stream.\n");
-	fprintf(f, "Based on DABlin (https://github.com/Opendigitalradio/dablin)\n");
 	fprintf(f, "\n");
 }

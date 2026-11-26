@@ -1,7 +1,4 @@
 /*
-    DABlin - capital DAB experience
-    Copyright (C) 2015-2024 Stefan Pöschel
-
     EDIScope - DAB+/EDI diagnostic player
     Copyright (C) 2025-2026 Yoann Queret
 
@@ -91,7 +88,7 @@ static void break_handler(int) {
 static void usage(const char* exe) {
 	EDIScopeGTKOptions options_default;
 
-	fprint_dablin_banner(stderr);
+	fprint_ediscope_banner(stderr);
 	fprintf(stderr, "Usage: %s [OPTIONS] [file]\n", exe);
 	fprintf(stderr, "  -h           Show this help\n"
 					"  -f <format>  Source format: \"%s\" (default), \"%s\"\n"
@@ -202,7 +199,7 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "The service component ID requires the service ID to be specified!\n");
 		usage(argv[0]);
 	}
-#ifdef DABLIN_DISABLE_SDL
+#ifdef EDISCOPE_DISABLE_SDL
 	if(!options.pcm_output) {
 		fprintf(stderr, "SDL output was disabled, so PCM output must be selected!\n");
 		usage(argv[0]);
@@ -222,7 +219,7 @@ int main(int argc, char **argv) {
 	}
 
 
-	fprint_dablin_banner(stderr);
+	fprint_ediscope_banner(stderr);
 
 	int myargc = 1;
 	Glib::RefPtr<Gtk::Application> app = Gtk::Application::create(myargc, argv, "");
@@ -319,7 +316,7 @@ EDIScopeGTK::EDIScopeGTK(EDIScopeGTKOptions options) : combo_network_uri(true) {
 	do_datetime_update.GetDispatcher().connect(sigc::mem_fun(*this, &EDIScopeGTK::DoDateTimeUpdateEmitted));
 
 	audio_output_type = AudioOutputType::SDL;
-#ifndef DABLIN_DISABLE_SDL
+#ifndef EDISCOPE_DISABLE_SDL
 	if(options.pcm_output)
 #endif
 		audio_output_type = AudioOutputType::PCM;
@@ -344,7 +341,7 @@ EDIScopeGTK::EDIScopeGTK(EDIScopeGTKOptions options) : combo_network_uri(true) {
 	fic_decoder = new FICDecoder(this, options.disable_dyn_fic_msgs);
 	pad_decoder = new PADDecoder(this, options.loose);
 
-	set_title("EDIScope v" + std::string(DABLIN_VERSION));
+	set_title("EDIScope v" + std::string(EDISCOPE_VERSION));
 
 	InitWidgets();
 

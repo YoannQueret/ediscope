@@ -1,7 +1,4 @@
 /*
-    DABlin - capital DAB experience
-    Copyright (C) 2015-2024 Stefan Pöschel
-
     EDIScope - DAB+/EDI diagnostic player
     Copyright (C) 2025-2026 Yoann Queret
 
@@ -40,7 +37,7 @@ EnsemblePlayer::EnsemblePlayer(AudioOutputType audio_output_type, bool disable_i
 	reporting_enabled = true;
 
 	switch(audio_output_type) {
-#ifndef DABLIN_DISABLE_SDL
+#ifndef EDISCOPE_DISABLE_SDL
 	case AudioOutputType::SDL:
 		out = new SDLOutput;
 		break;

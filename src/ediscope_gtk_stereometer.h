@@ -16,8 +16,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef DABLIN_GTK_STEREOMETER_H_
-#define DABLIN_GTK_STEREOMETER_H_
+#ifndef EDISCOPE_GTK_STEREOMETER_H_
+#define EDISCOPE_GTK_STEREOMETER_H_
 
 #include <cstddef>
 #include <deque>
@@ -49,4 +49,4 @@ public:
 	void Reset();
 };
 
-#endif /* DABLIN_GTK_STEREOMETER_H_ */
+#endif /* EDISCOPE_GTK_STEREOMETER_H_ */

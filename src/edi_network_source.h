@@ -25,8 +25,8 @@
 
 // --- EDITCPSource -----------------------------------------------------------------
 // Connects to a remote EDI/TCP server and feeds the byte stream through EDISource's
-// existing AF packet framing - equivalent to piping `nc host port | dablin -f edi`,
-// just with dablin owning the socket itself.
+// existing AF packet framing - equivalent to piping `nc host port | ediscope -f edi`,
+// just with EDIScope owning the socket itself.
 class EDITCPSource : public EDISource {
 private:
 	std::string host;

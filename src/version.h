@@ -1,7 +1,4 @@
 /*
-    DABlin - capital DAB experience
-    Copyright (C) 2016-2025 Stefan Pöschel
-
     EDIScope - DAB+/EDI diagnostic player
     Copyright (C) 2025-2026 Yoann Queret
 
@@ -25,11 +22,11 @@
 #include <stdio.h>
 
 // usually externally derived from git
-#ifndef DABLIN_VERSION
-#define DABLIN_VERSION "1.16.1"
+#ifndef EDISCOPE_VERSION
+#define EDISCOPE_VERSION "2.0.0"
 #endif
 
 
-void fprint_dablin_banner(FILE *f);
+void fprint_ediscope_banner(FILE *f);
 
 #endif /* VERSION_H_ */

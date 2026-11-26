@@ -1,7 +1,4 @@
 /*
-    DABlin - capital DAB experience
-    Copyright (C) 2015-2024 Stefan Pöschel
-
     EDIScope - DAB+/EDI diagnostic player
     Copyright (C) 2025-2026 Yoann Queret
 
@@ -28,15 +25,15 @@
 #include <stdexcept>
 #include <string>
 
-#if !(defined(DABLIN_AAC_FAAD2) ^ defined(DABLIN_AAC_FDKAAC))
-#error "You must select a AAC decoder by defining either DABLIN_AAC_FAAD2 or DABLIN_AAC_FDKAAC!"
+#if !(defined(EDISCOPE_AAC_FAAD2) ^ defined(EDISCOPE_AAC_FDKAAC))
+#error "You must select a AAC decoder by defining either EDISCOPE_AAC_FAAD2 or EDISCOPE_AAC_FDKAAC!"
 #endif
 
-#ifdef DABLIN_AAC_FAAD2
+#ifdef EDISCOPE_AAC_FAAD2
 #include <neaacdec.h>
 #endif
 
-#ifdef DABLIN_AAC_FDKAAC
+#ifdef EDISCOPE_AAC_FDKAAC
 #include <fdk-aac/aacdecoder_lib.h>
 #endif
 
@@ -102,7 +99,7 @@ public:
 };
 
 
-#ifdef DABLIN_AAC_FAAD2
+#ifdef EDISCOPE_AAC_FAAD2
 // --- AACDecoderFAAD2 -----------------------------------------------------------------
 class AACDecoderFAAD2 : public AACDecoder {
 private:
@@ -117,7 +114,7 @@ public:
 #endif
 
 
-#ifdef DABLIN_AAC_FDKAAC
+#ifdef EDISCOPE_AAC_FDKAAC
 // --- AACDecoderFDKAAC -----------------------------------------------------------------
 class AACDecoderFDKAAC : public AACDecoder {
 private:

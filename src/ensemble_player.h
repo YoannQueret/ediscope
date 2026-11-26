@@ -1,7 +1,4 @@
 /*
-    DABlin - capital DAB experience
-    Copyright (C) 2015-2024 Stefan Pöschel
-
     EDIScope - DAB+/EDI diagnostic player
     Copyright (C) 2025-2026 Yoann Queret
 
@@ -23,7 +20,7 @@
 #define ENSEMBLE_PLAYER_H_
 
 // sdl_output.h, that includes SDL.h, must be included before <string> or it won't compile on OS X
-#ifndef DABLIN_DISABLE_SDL
+#ifndef EDISCOPE_DISABLE_SDL
 #include "sdl_output.h"
 #endif
 

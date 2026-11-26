@@ -1,7 +1,4 @@
 /*
-    DABlin - capital DAB experience
-    Copyright (C) 2015-2024 Stefan Pöschel
-
     EDIScope - DAB+/EDI diagnostic player
     Copyright (C) 2025-2026 Yoann Queret
 
@@ -19,8 +16,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef DABLIN_H_
-#define DABLIN_H_
+#ifndef EDISCOPE_H_
+#define EDISCOPE_H_
 
 // eti_player.h, that indirectly includes SDL.h, must be included before <string> or it won't compile on OS X
 #include "eti_player.h"
@@ -93,4 +90,4 @@ public:
 };
 
 
-#endif /* DABLIN_H_ */
+#endif /* EDISCOPE_H_ */

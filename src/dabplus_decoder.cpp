@@ -1,7 +1,4 @@
 /*
-    DABlin - capital DAB experience
-    Copyright (C) 2015-2024 Stefan Pöschel
-
     EDIScope - DAB+/EDI diagnostic player
     Copyright (C) 2025-2026 Yoann Queret
 
@@ -261,10 +258,10 @@ void SuperframeFilter::ProcessFormat() {
 
 	if(decode_audio) {
 		delete aac_dec;
-#ifdef DABLIN_AAC_FAAD2
+#ifdef EDISCOPE_AAC_FAAD2
 		aac_dec = new AACDecoderFAAD2(observer, sf_format);
 #endif
-#ifdef DABLIN_AAC_FDKAAC
+#ifdef EDISCOPE_AAC_FDKAAC
 		aac_dec = new AACDecoderFDKAAC(observer, sf_format);
 #endif
 	}
@@ -426,7 +423,7 @@ AACDecoder::AACDecoder(std::string decoder_name, SubchannelSinkObserver* observe
 }
 
 
-#ifdef DABLIN_AAC_FAAD2
+#ifdef EDISCOPE_AAC_FAAD2
 // --- AACDecoderFAAD2 -----------------------------------------------------------------
 AACDecoderFAAD2::AACDecoderFAAD2(SubchannelSinkObserver* observer, SuperframeFormat sf_format) : AACDecoder("FAAD2", observer, sf_format) {
 	// ensure features
@@ -482,7 +479,7 @@ void AACDecoderFAAD2::DecodeFrame(uint8_t *data, size_t len) {
 
 
 
-#ifdef DABLIN_AAC_FDKAAC
+#ifdef EDISCOPE_AAC_FDKAAC
 // --- AACDecoderFDKAAC -----------------------------------------------------------------
 AACDecoderFDKAAC::AACDecoderFDKAAC(SubchannelSinkObserver* observer, SuperframeFormat sf_format) : AACDecoder("FDK-AAC", observer, sf_format) {
 	handle = aacDecoder_Open(TT_MP4_RAW, 1);

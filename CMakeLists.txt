@@ -20,7 +20,7 @@ enable_testing()
 
 
 ########################################################################
-# Build the FEC library before setting up DABlin application builds.
+# Build the FEC library before setting up the EDIScope application builds.
 ########################################################################
 
 add_subdirectory(fec)
@@ -39,7 +39,7 @@ execute_process(
 )
 
 if(VERSION_FROM_GIT)
-	add_definitions(-DDABLIN_VERSION="${VERSION_FROM_GIT}")
+	add_definitions(-DEDISCOPE_VERSION="${VERSION_FROM_GIT}")
 	set(VERSION_OUTPUT ${VERSION_FROM_GIT})
 else()
 	set(VERSION_OUTPUT "[see src/version.h]")
@@ -100,7 +100,7 @@ if(NOT DISABLE_SDL)
 	link_directories(${SDL2_LIBRARY_DIRS})
 	list(APPEND ediscope_sources sdl_output.cpp)
 else()
-    add_definitions(-DDABLIN_DISABLE_SDL)
+    add_definitions(-DEDISCOPE_DISABLE_SDL)
 endif()
 
 # libmpg123
@@ -137,14 +137,14 @@ if(USE_FDK-AAC)
         link_directories(${FDKAAC_LIBRARY_DIRS})
         list(APPEND AAC_LIB ${FDKAAC_LIBRARIES})
     endif()
-    add_definitions(-DDABLIN_AAC_FDKAAC)
+    add_definitions(-DEDISCOPE_AAC_FDKAAC)
 else()
     # libfaad2
     find_package(FAAD REQUIRED)
     include_directories(${FAAD_INCLUDE_DIRS})
     link_directories(${FAAD_LIBRARY_DIRS})
     list(APPEND AAC_LIB ${FAAD_LIBRARIES})
-    add_definitions(-DDABLIN_AAC_FAAD2)
+    add_definitions(-DEDISCOPE_AAC_FAAD2)
 endif()
 
 # iconv

@@ -16,8 +16,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef DABLIN_GTK_SPI_H_
-#define DABLIN_GTK_SPI_H_
+#ifndef EDISCOPE_GTK_SPI_H_
+#define EDISCOPE_GTK_SPI_H_
 
 #include <map>
 #include <string>
@@ -117,4 +117,4 @@ public:
 	void Clear();
 };
 
-#endif /* DABLIN_GTK_SPI_H_ */
+#endif /* EDISCOPE_GTK_SPI_H_ */

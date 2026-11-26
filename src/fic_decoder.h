@@ -1,7 +1,4 @@
 /*
-    DABlin - capital DAB experience
-    Copyright (C) 2015-2022 Stefan Pöschel
-
     EDIScope - DAB+/EDI diagnostic player
     Copyright (C) 2025-2026 Yoann Queret
 
@@ -461,7 +458,7 @@ public:
 	virtual void FICChangeUTCDateTime(const FIC_DAB_DT& /*utc_dt*/) {}
 
 	// every sub-channel in the ensemble (audio AND data, e.g. EPG), so CU occupancy can be
-	// shown accurately even for sub-channels with no (audio) service dablin can play
+	// shown accurately even for sub-channels with no (audio) service EDIScope can play
 	virtual void FICChangeSubchannel(int /*subchid*/, const FIC_SUBCHANNEL& /*subchannel*/) {}
 	virtual void FICRemoveSubchannel(int /*subchid*/) {}
 

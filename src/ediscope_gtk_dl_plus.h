@@ -1,7 +1,4 @@
 /*
-    DABlin - capital DAB experience
-    Copyright (C) 2021 Stefan Pöschel
-
     EDIScope - DAB+/EDI diagnostic player
     Copyright (C) 2025-2026 Yoann Queret
 
@@ -19,8 +16,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef DABLIN_GTK_DL_PLUS_H_
-#define DABLIN_GTK_DL_PLUS_H_
+#ifndef EDISCOPE_GTK_DL_PLUS_H_
+#define EDISCOPE_GTK_DL_PLUS_H_
 
 #include <string>
 
@@ -65,4 +62,4 @@ public:
 };
 
 
-#endif /* DABLIN_GTK_DL_PLUS_H_ */
+#endif /* EDISCOPE_GTK_DL_PLUS_H_ */

@@ -16,8 +16,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef DABLIN_GTK_CU_BAR_H_
-#define DABLIN_GTK_CU_BAR_H_
+#ifndef EDISCOPE_GTK_CU_BAR_H_
+#define EDISCOPE_GTK_CU_BAR_H_
 
 #include <map>
 #include <vector>
@@ -29,7 +29,7 @@
 
 // --- EDIScopeGTKCUBar -----------------------------------------------------------------
 // full width bar showing the CIF's 864 Capacity Units, with one block per occupied sub-channel -
-// including sub-channels with no (audio) service dablin can play (e.g. data/EPG services),
+// including sub-channels with no (audio) service EDIScope can play (e.g. data/EPG services),
 // so the bar's background accurately reflects which CUs are actually free
 class EDIScopeGTKCUBar : public Gtk::DrawingArea {
 private:
@@ -67,4 +67,4 @@ public:
 	sigc::signal<void, uint16_t, int> signal_service_clicked;
 };
 
-#endif /* DABLIN_GTK_CU_BAR_H_ */
+#endif /* EDISCOPE_GTK_CU_BAR_H_ */

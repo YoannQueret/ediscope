@@ -1,7 +1,4 @@
 /*
-    DABlin - capital DAB experience
-    Copyright (C) 2015-2024 Stefan Pöschel
-
     EDIScope - DAB+/EDI diagnostic player
     Copyright (C) 2025-2026 Yoann Queret
 
@@ -76,7 +73,7 @@ static NETWORK_URI ParseNetworkURI(const std::string& uri) {
 
 
 static void usage(const char* exe) {
-	fprint_dablin_banner(stderr);
+	fprint_ediscope_banner(stderr);
 	fprintf(stderr, "Usage: %s [OPTIONS] [file]\n", exe);
 	fprintf(stderr, "  -h            Show this help\n"
 					"  -f <format>   Source format: \"%s\" (default), \"%s\"\n"
@@ -184,7 +181,7 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "The service component ID requires the service ID to be specified!\n");
 		usage(argv[0]);
 	}
-#ifdef DABLIN_DISABLE_SDL
+#ifdef EDISCOPE_DISABLE_SDL
 	if(!options.pcm_output) {
 		fprintf(stderr, "SDL output was disabled, so PCM output must be selected!\n");
 		usage(argv[0]);
@@ -204,7 +201,7 @@ int main(int argc, char **argv) {
 	}
 
 
-	fprint_dablin_banner(stderr);
+	fprint_ediscope_banner(stderr);
 
 	ediscope = new EDIScopeText(options);
 	int result = ediscope->Main();
@@ -220,10 +217,10 @@ EDIScopeText::EDIScopeText(EDIScopeTextOptions options) {
 	this->options = options;
 
 	// set XTerm window title to version string
-	fprintf(stderr, "\x1B]0;" "EDIScope v" DABLIN_VERSION "\a");
+	fprintf(stderr, "\x1B]0;" "EDIScope v" EDISCOPE_VERSION "\a");
 
 	AudioOutputType audio_output_type = AudioOutputType::SDL;
-#ifndef DABLIN_DISABLE_SDL
+#ifndef EDISCOPE_DISABLE_SDL
 	if(options.pcm_output)
 #endif
 		audio_output_type = AudioOutputType::PCM;

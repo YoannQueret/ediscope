@@ -1,13 +1,9 @@
 # EDIScope
 
-EDIScope is a DAB/DAB+ ETI/EDI player and diagnostic tool, forked from
-[DABlin](https://github.com/Opendigitalradio/dablin) by Stefan Pöschel.
-Where DABlin is a general-purpose DAB/DAB+ receiver (live SDR reception,
-ETI playback, EDI playback), EDIScope narrows and extends that scope
-specifically around **EDI**: receiving, timing and inspecting an
-ODR-DabMux EDI output live over the network, with real-time pacing and
-on-screen diagnostics (buffering margin, live ensemble changes, CU
-occupancy, etc.) that upstream DABlin does not have.
+EDIScope is a DAB/DAB+ ETI/EDI player and diagnostic tool built around
+**EDI**: receiving, timing and inspecting an ODR-DabMux EDI output live
+over the network, with real-time pacing and on-screen diagnostics
+(buffering margin, live ensemble changes, CU occupancy, etc.).
 
 Both a console (`ediscope`) and a GTK GUI (`ediscope_gtk`) version are
 built.
@@ -18,10 +14,7 @@ built.
 ![Screenshot of the GTK GUI version](doc/ediscope.png)
 
 
-## What EDIScope adds over upstream DABlin
-
-This section lists everything that has been added, changed or removed
-in this fork, on top of stock DABlin:
+## Features
 
 * **EDI network input.** Connect directly to a live TCP or UDP (uni- or
   multicast) EDI source from the GUI's "Source" box (with PFT/Reed-Solomon
@@ -41,8 +34,7 @@ in this fork, on top of stock DABlin:
   value available as a tooltip. See
   [EDI timing diagnostics](#edi-timing-diagnostics).
 
-* **Live ensemble/service monitoring.** The old service drop-down is
-  replaced by a sortable **services table** (SubChId, SID, ECC, label,
+* **Live ensemble/service monitoring.** A sortable **services table** (SubChId, SID, ECC, label,
   short label, CUs, protection, bit rate, format/samplerate/audio mode,
   language, PTY), a **CU occupancy bar** (864 CUs/CIF) with click-to-play
   and SubChId/SID labels, a live **ECC → country** lookup, and a
@@ -66,8 +58,8 @@ in this fork, on top of stock DABlin:
 * **More visualizations.** A frequency **spectrum analyzer** (bubble or
   bar style, mono or stereo), a stereo **vectorscope/goniometer**, a
   phase **correlation meter**, and a peak **level meter** are shown
-  alongside Dynamic Label and the Slideshow, which are now embedded
-  directly in the main window instead of floating windows.
+  alongside Dynamic Label and the Slideshow, all embedded directly in
+  the main window.
 
 * **Slideshow history.** The last 4 slides are kept as a vertical strip
   of thumbnails next to the current slide (sized to match its height),
@@ -76,27 +68,16 @@ in this fork, on top of stock DABlin:
   and a tooltip with resolution/size/format/content name - so you don't
   lose a slide just because a newer one replaced it on screen.
 
-* **No live DAB/RTL-SDR reception.** EDIScope intentionally does **not**
-  include DABlin's built-in live DAB source support (RTL-SDR via a
-  bundled `eti-cmdline`, or spawning an external `dab2eti`/`eti-cmdline`
-  binary). It focuses on ETI and EDI *streams* - from a file, from
-  `stdin`, or (for EDI) directly over the network - not on demodulating
-  DAB off the air itself. If you need live SDR reception, pipe a
-  live ETI-NI stream from an external tool into EDIScope instead (see
-  [ETI/EDI live reception via pipe](#etiedi-live-reception-via-pipe));
-  there is no `-d`/`-D`/`-c`/`-C`/`-g`/`-G` channel/gain/live-source
-  option anymore.
+* **No live DAB/RTL-SDR reception.** EDIScope focuses on ETI and EDI
+  *streams* - from a file, from `stdin`, or (for EDI) directly over the
+  network - not on demodulating DAB off the air itself. If you need live
+  SDR reception, pipe a live ETI-NI stream from an external tool into
+  EDIScope instead (see
+  [ETI/EDI live reception via pipe](#etiedi-live-reception-via-pipe)).
 
-* **Rebranded and packaged as its own app.** Renamed throughout from
-  DABlin to EDIScope (binaries `ediscope`/`ediscope_gtk`, window titles,
-  man pages, config directory), with its own icon embedded in the
-  binary and a `.desktop` entry so it shows up correctly in a taskbar,
-  dock or Alt-Tab switcher - not just as a bare terminal window.
-
-The upstream copyright, license and the bulk of the original decoding
-engine (ETI/EDI framing, DAB/DAB+ audio decoding, FIC/PAD/MOT parsing,
-Dynamic Label(+), recording, announcements, hotkeys, status messages)
-are unchanged and documented below as they still apply to EDIScope.
+* **Desktop integration.** Its own icon embedded in the binary and a
+  `.desktop` entry so it shows up correctly in a taskbar, dock or
+  Alt-Tab switcher - not just as a bare terminal window.
 
 
 ## Requirements
@@ -434,8 +415,8 @@ Note that EDI received this way (piped as a raw AF/PFT byte stream) does
 not go through the same timestamp-based pacing as a direct TCP/UDP
 network connection described in
 [EDI network input](#edi-network-input) - the ATST is still decoded and
-shown, but pacing on an arbitrary pipe falls back to DABlin's original
-fixed-rate catch-up behaviour described above.
+shown, but pacing on an arbitrary pipe falls back to the fixed-rate
+catch-up behaviour described above.
 
 
 ### Recording a service
@@ -602,14 +583,8 @@ This software is licensed under the GNU General Public License Version 3
 
 *Please note that the included FEC lib by KA9Q has a separate license!*
 
-EDIScope
-Copyright (C) 2026 Yoann Queret
-
-EDIScope is a fork of, and remains fully licensed under the same terms
-as, the original DABlin:
-
-DABlin - capital DAB experience
-Copyright (C) 2015-2024 Stefan Pöschel
+EDIScope - DAB+/EDI diagnostic player
+Copyright (C) 2025-2026 Yoann Queret
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
