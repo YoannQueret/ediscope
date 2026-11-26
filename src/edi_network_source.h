@@ -35,6 +35,7 @@ private:
 protected:
 	void Init();
 	void PrintSource();
+	bool IsReconnectable() const {return true;}
 
 public:
 	EDITCPSource(std::string host, int port, EnsembleSourceObserver *observer);

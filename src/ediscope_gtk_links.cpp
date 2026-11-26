@@ -19,6 +19,7 @@
 #include "ediscope_gtk_links.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 
 #include "tools.h"
@@ -107,9 +108,9 @@ EDIScopeGTKLinksWindow::EDIScopeGTKLinksWindow() :
 
 	members_store = Gtk::ListStore::create(members_cols);
 	members_view.set_model(members_store);
-	members_view.append_column("Type", members_cols.col_type);
-	members_view.append_column("Id", members_cols.col_id);
-	members_view.append_column("Detail", members_cols.col_detail);
+	AppendTopAlignedColumn(members_view, "Type", members_cols.col_type);
+	AppendTopAlignedColumn(members_view, "Id", members_cols.col_id);
+	AppendTopAlignedColumn(members_view, "Detail", members_cols.col_detail);
 	for(int i = 0; i < 3; i++)
 		members_view.get_column(i)->set_resizable(true);
 
@@ -140,12 +141,13 @@ EDIScopeGTKLinksWindow::EDIScopeGTKLinksWindow() :
 
 	frequencies_store = Gtk::ListStore::create(frequencies_cols);
 	frequencies_view.set_model(frequencies_store);
-	frequencies_view.append_column("LSN", frequencies_cols.col_lsn);
-	frequencies_view.append_column("Range", frequencies_cols.col_range);
-	frequencies_view.append_column("Applies to", frequencies_cols.col_scope);
-	frequencies_view.append_column("Id", frequencies_cols.col_id);
-	frequencies_view.append_column("Frequencies", frequencies_cols.col_frequencies);
-	for(int i = 0; i < 5; i++)
+	AppendTopAlignedColumn(frequencies_view, "Id", frequencies_cols.col_id);
+	AppendTopAlignedColumn(frequencies_view, "Frequencies", frequencies_cols.col_frequencies);
+	AppendTopAlignedColumn(frequencies_view, "Channel", frequencies_cols.col_channel);
+	AppendTopAlignedColumn(frequencies_view, "Range", frequencies_cols.col_range);
+	AppendTopAlignedColumn(frequencies_view, "Applies to", frequencies_cols.col_scope);
+	AppendTopAlignedColumn(frequencies_view, "LSN", frequencies_cols.col_lsn);
+	for(int i = 0; i < 6; i++)
 		frequencies_view.get_column(i)->set_resizable(true);
 
 	frequencies_scroll.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
@@ -231,6 +233,13 @@ void EDIScopeGTKLinksWindow::SetEnsembleEid(int eid) {
 	ensemble_eid = eid;
 }
 
+void EDIScopeGTKLinksWindow::AppendTopAlignedColumn(Gtk::TreeView& view, const Glib::ustring& title, const Gtk::TreeModelColumn<Glib::ustring>& column) {
+	Gtk::CellRendererText *renderer = Gtk::manage(new Gtk::CellRendererText());
+	renderer->property_yalign() = 0.0;
+	int col_index = view.append_column(title, *renderer) - 1;
+	view.get_column(col_index)->add_attribute(renderer->property_text(), column);
+}
+
 Glib::ustring EDIScopeGTKLinksWindow::FormatMemberType(const FIC_LINKED_SERVICE& member) {
 	switch(member.type) {
 	case FIC_LINKED_SERVICE::DAB_SID: return "DAB";
@@ -272,7 +281,7 @@ Glib::ustring EDIScopeGTKLinksWindow::FormatMemberDetail(const FIC_LINKED_SERVIC
 
 		for(size_t i = 0; i < eids.size(); i++) {
 			if(i)
-				detail += "; ";
+				detail += "\n";
 			detail += "EId " + StringTools::IntToHex(eids[i], 4).substr(2);
 
 			for(bool oe : {false, true}) {
@@ -357,6 +366,42 @@ Glib::ustring EDIScopeGTKLinksWindow::FormatFrequencies(const FIC_FREQUENCY_INFO
 	return result.empty() ? "(none)" : result;
 }
 
+Glib::ustring EDIScopeGTKLinksWindow::FormatDABChannels(const FIC_FREQUENCY_INFO& info) {
+	if(info.range != FIC_FREQUENCY_INFO::DAB_ENSEMBLE)
+		return "";
+
+	// standard EUREKA-147 Band III channel raster (ETSI EN 300 401 annex B); 16 kHz steps, so an
+	// exact match is expected for any properly encoded FIG 0/21 DAB_ENSEMBLE frequency
+	static const struct {const char *channel; double freq_khz;} BAND_III[] = {
+		{"5A", 174928}, {"5B", 176640}, {"5C", 178352}, {"5D", 180064},
+		{"6A", 181936}, {"6B", 183648}, {"6C", 185360}, {"6D", 187072},
+		{"7A", 188928}, {"7B", 190640}, {"7C", 192352}, {"7D", 194064},
+		{"8A", 195936}, {"8B", 197648}, {"8C", 199360}, {"8D", 201072},
+		{"9A", 202928}, {"9B", 204640}, {"9C", 206352}, {"9D", 208064},
+		{"10A", 209936}, {"10B", 211648}, {"10C", 213360}, {"10D", 215072},
+		{"11A", 216928}, {"11B", 218640}, {"11C", 220352}, {"11D", 222064},
+		{"12A", 223936}, {"12B", 225648}, {"12C", 227360}, {"12D", 229072},
+		{"13A", 230784}, {"13B", 232496}, {"13C", 234208}, {"13D", 235776}, {"13E", 237488}, {"13F", 239200},
+	};
+
+	std::string result;
+	for(const FIC_FI_DAB_FREQ& f : info.dab_freqs) {
+		if(!result.empty())
+			result += ", ";
+
+		const char *channel = nullptr;
+		for(const auto& ch : BAND_III) {
+			if(std::abs(f.freq_khz - ch.freq_khz) < 1.0) {
+				channel = ch.channel;
+				break;
+			}
+		}
+		result += channel ? channel : "?";
+	}
+
+	return result;
+}
+
 std::vector<int> EDIScopeGTKLinksWindow::FindLSNsForMember(FIC_LINKED_SERVICE::TYPE type, uint32_t id) const {
 	std::vector<int> lsns;
 	for(const std::pair<const int,FIC_SERVICE_LINKING_SET>& kv : linking_sets) {
@@ -405,7 +450,7 @@ Glib::ustring EDIScopeGTKLinksWindow::FormatLSNList(const std::vector<int>& lsns
 	std::string result;
 	for(int lsn : lsns) {
 		if(!result.empty())
-			result += ", ";
+			result += "\n";
 		result += StringTools::IntToHex(lsn, 3);
 	}
 	return result;
@@ -511,6 +556,7 @@ void EDIScopeGTKLinksWindow::RebuildFrequenciesTab() {
 		row[frequencies_cols.col_id] = id_str;
 
 		row[frequencies_cols.col_frequencies] = FormatFrequencies(info);
+		row[frequencies_cols.col_channel] = FormatDABChannels(info);
 	}
 }
 

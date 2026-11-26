@@ -21,6 +21,8 @@
 
 #include "eti_source.h"
 
+#include <chrono>
+
 
 // --- EnsembleSource -----------------------------------------------------------------
 const std::string EnsembleSource::FORMAT_ETI = "eti";
@@ -101,16 +103,55 @@ bool EnsembleSource::UpdateTotalBytes() {
 	return true;
 }
 
-int EnsembleSource::Main() {
-	Init();
+static const int RECONNECT_DELAY_S = 5;
 
-	if(!input_file) {
-		if(!OpenFile())
-			return 1;
+bool EnsembleSource::WaitBeforeReconnect() {
+	// slept in small slices so a do_exit request (the user hitting "disconnect", or the window
+	// closing) is picked up quickly instead of after a full RECONNECT_DELAY_S
+	for(int waited_ms = 0; waited_ms < RECONNECT_DELAY_S * 1000; waited_ms += 100) {
+		if(do_exit)
+			return false;
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
+	return !do_exit;
+}
 
-	PrintSource();
+int EnsembleSource::Main() {
+	while(true) {
+		Init();
 
+		if(!input_file) {
+			if(!IsReconnectable()) {
+				// plain file/stdin source: Init() does nothing, this is the regular first-time open
+				if(!OpenFile())
+					return 1;
+			} else {
+				// network source: Init() already reported why the (re)connect attempt failed
+				fprintf(stderr, "EnsembleSource: connect failed, retrying in %ds...\n", RECONNECT_DELAY_S);
+				if(!WaitBeforeReconnect())
+					return 0;
+				continue;
+			}
+		}
+
+		PrintSource();
+		int result = ReadLoop();
+
+		if(input_file && input_file != stdin) {
+			fclose(input_file);
+			input_file = nullptr;
+		}
+
+		if(!IsReconnectable() || do_exit)
+			return result;
+
+		fprintf(stderr, "EnsembleSource: connection lost, reconnecting in %ds...\n", RECONNECT_DELAY_S);
+		if(!WaitBeforeReconnect())
+			return 0;
+	}
+}
+
+int EnsembleSource::ReadLoop() {
 	int file_no = fileno(input_file);
 
 	// set non-blocking mode

@@ -1958,6 +1958,7 @@ void EDIScopeGTK::RDNSResultReadyEmitted() {
 
 std::vector<EDIScopeGTKLinksWindow::SERVICE_ENTRY> EDIScopeGTK::BuildLinksServiceList() {
 	std::vector<EDIScopeGTKLinksWindow::SERVICE_ENTRY> list;
+	std::set<int> known_sids;
 
 	for(const Gtk::TreeModel::Row& row : services_table_liststore->children()) {
 		const LISTED_SERVICE& service = (LISTED_SERVICE) row[services_table_cols.col_service];
@@ -1974,6 +1975,37 @@ std::vector<EDIScopeGTKLinksWindow::SERVICE_ENTRY> EDIScopeGTK::BuildLinksServic
 		entry.label = label;
 
 		list.push_back(entry);
+		known_sids.insert(service.sid);
+	}
+
+	// a FIG 0/6 linking set isn't necessarily only about services actually carried on this
+	// ensemble (clause 8.1.15's "key service" and its DAB_SID members can both be elsewhere,
+	// e.g. a service only ever present on another, adjacent ensemble) - add a placeholder entry
+	// for every such SId so its linking information can still be inspected, instead of making it
+	// impossible to even select that configuration
+	for(const fic_service_linking_sets_t::value_type& kv : service_linking_sets) {
+		const FIC_SERVICE_LINKING_SET& set = kv.second;
+		if(set.is_data)
+			continue;	// the Links window only navigates by (SId, SCIdS) as used for audio services
+
+		std::vector<uint32_t> extra_sids;
+		if(set.key_service_sid != FIC_SERVICE_LINKING_SET::sid_none)
+			extra_sids.push_back(set.key_service_sid);
+		for(const FIC_LINKED_SERVICE& member : set.members)
+			if(member.type == FIC_LINKED_SERVICE::DAB_SID)
+				extra_sids.push_back(member.id);
+
+		for(uint32_t sid : extra_sids) {
+			if(known_sids.count((int) sid))
+				continue;
+			known_sids.insert((int) sid);
+
+			EDIScopeGTKLinksWindow::SERVICE_ENTRY entry;
+			entry.sid = (int) sid;
+			entry.scids = 0;
+			entry.label = "SId " + StringTools::SidToHex((int) sid) + " (not on this ensemble)";
+			list.push_back(entry);
+		}
 	}
 
 	return list;

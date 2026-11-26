@@ -68,14 +68,15 @@ private:
 	};
 
 	struct FrequenciesColumns : public Gtk::TreeModelColumnRecord {
-		Gtk::TreeModelColumn<Glib::ustring> col_lsn;
-		Gtk::TreeModelColumn<Glib::ustring> col_range;
-		Gtk::TreeModelColumn<Glib::ustring> col_scope;
 		Gtk::TreeModelColumn<Glib::ustring> col_id;
 		Gtk::TreeModelColumn<Glib::ustring> col_frequencies;
+		Gtk::TreeModelColumn<Glib::ustring> col_channel;
+		Gtk::TreeModelColumn<Glib::ustring> col_range;
+		Gtk::TreeModelColumn<Glib::ustring> col_scope;
+		Gtk::TreeModelColumn<Glib::ustring> col_lsn;
 
 		FrequenciesColumns() {
-			add(col_lsn); add(col_range); add(col_scope); add(col_id); add(col_frequencies);
+			add(col_id); add(col_frequencies); add(col_channel); add(col_range); add(col_scope); add(col_lsn);
 		}
 	};
 
@@ -137,11 +138,19 @@ private:
 	int ensemble_eid;
 	bool positioned;
 
+	// plain text column whose cell is top-aligned, not vertically centered - so that a row stays
+	// readable once one of its columns (e.g. a multi-line LSN or Detail list) grows taller than
+	// the others
+	static void AppendTopAlignedColumn(Gtk::TreeView& view, const Glib::ustring& title, const Gtk::TreeModelColumn<Glib::ustring>& column);
+
 	static Glib::ustring FormatMemberType(const FIC_LINKED_SERVICE& member);
 	static Glib::ustring FormatMemberId(const FIC_LINKED_SERVICE& member);
 	Glib::ustring FormatMemberDetail(const FIC_LINKED_SERVICE& member) const;
 	static Glib::ustring FormatRangeName(FIC_FREQUENCY_INFO::RANGE range);
 	static Glib::ustring FormatFrequencies(const FIC_FREQUENCY_INFO& info);
+	// Band III/L-Band channel label(s) (e.g. "9C"), same order/count as FormatFrequencies - empty
+	// for a non-DAB_ENSEMBLE entry, or for a frequency outside the standard EUREKA-147 raster
+	static Glib::ustring FormatDABChannels(const FIC_FREQUENCY_INFO& info);
 
 	// LSN(s) (linkage set number(s), as shown in the "Linking" tab) of every linking set that
 	// lists the given member (matched by type + id) as one of its alternatives

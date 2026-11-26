@@ -94,6 +94,17 @@ protected:
 	virtual void Init() {}
 	virtual void PrintSource();
 
+	// overridden by network sources (e.g. EDITCPSource) that should keep retrying - with a delay
+	// between attempts, cooperatively interruptible via do_exit - instead of giving up for good the
+	// first time Init() fails to (re)connect, or the connection is later lost mid-stream; a plain
+	// file/stdin source has nothing to reconnect to, so this stays false for it
+	virtual bool IsReconnectable() const {return false;}
+	bool WaitBeforeReconnect();
+
+	// one full "connect, read until EOF/error/do_exit" pass - extracted out of Main() so a
+	// reconnectable source can repeat it, each time starting from fresh frame-sync state
+	int ReadLoop();
+
 	virtual bool CheckFrameCompleted(const SYNC_MAGIC& matched_sync_magic) = 0;
 	virtual void ProcessCompletedFrame(const SYNC_MAGIC& /*matched_sync_magic*/) {observer->EnsembleProcessFrame(&ensemble_frame[0]);}
 public:
