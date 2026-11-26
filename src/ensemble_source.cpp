@@ -165,6 +165,10 @@ int EnsembleSource::ReadLoop() {
 		return 1;
 	}
 
+	// a connection lost in the middle of a frame leaves the buffer sized for that frame: start the
+	// new connection from the initial (header-only) size, like the very first one
+	ensemble_frame.resize(initial_frame_size);
+
 	fd_set fds;
 	timeval select_timeval;
 	size_t filled = 0;

@@ -30,6 +30,8 @@ void FICDecoder::Log(const std::string& message) {
 }
 
 void FICDecoder::Reset() {
+	std::lock_guard<std::mutex> lock(mutex);
+
 	ensemble = FIC_ENSEMBLE();
 	services.clear();
 	subchannels.clear();
@@ -43,10 +45,17 @@ void FICDecoder::Reset() {
 	spi_service_sids.clear();
 	spi_subchannels.clear();
 	packet_mode_fec.clear();
+	// FIG 0/6, 0/21 and 0/24 are only reported when they change: if kept here after a disconnect,
+	// the same entries received again from the new connection would never be reported
+	service_linking_sets.clear();
+	frequency_infos.clear();
+	oe_services.clear();
 	utc_dt = FIC_DAB_DT();
 }
 
 void FICDecoder::Process(const uint8_t *data, size_t len) {
+	std::lock_guard<std::mutex> lock(mutex);
+
 	// check for integer FIB count
 	if(len % 32) {
 		fprintf(stderr, "FICDecoder: Ignoring non-integer FIB count FIC data with %zu bytes\n", len);
@@ -1417,6 +1426,8 @@ void FICDecoder::UpdateListedService(const FIC_SERVICE& service, int scids, bool
 }
 
 void FICDecoder::CheckServiceTimeouts() {
+	std::lock_guard<std::mutex> lock(mutex);
+
 	// detect services hot-removed from the ensemble: FIG 0/2 lists the complete,
 	// currently valid service table on every cycle, so any service that was
 	// seen before but stays absent from it for longer than service_timeout

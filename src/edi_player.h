@@ -54,6 +54,11 @@ private:
 	std::deque<QueuedFrame> queue;
 	bool do_exit;
 
+	// bumped by Flush() (under queue_mutex): a frame taken from the queue before that is dropped
+	unsigned long flush_generation;
+	// held by the playback thread while it decodes a frame, so Flush() can wait for that to end
+	std::mutex playback_mutex;
+
 	// last margin/buffer delay seen, so a report from either side of the split always carries
 	// both figures, even though they are now measured independently, often several frames apart
 	std::mutex timing_mutex;
@@ -69,6 +74,7 @@ public:
 	~EDIPlayer();
 
 	void PrepareStop() override;
+	void Flush() override;
 };
 
 #endif /* EDI_PLAYER_H_ */

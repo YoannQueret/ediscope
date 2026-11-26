@@ -32,6 +32,7 @@
 #include <time.h>
 #include <chrono>
 #include <utility>
+#include <mutex>
 
 #include "tools.h"
 
@@ -573,6 +574,10 @@ private:
 	fic_service_linking_sets_t service_linking_sets;	// from FIG 0/6
 	fic_frequency_infos_t frequency_infos;				// from FIG 0/21
 	fic_oe_services_t oe_services;						// from FIG 0/24
+
+	// Process() runs on the EDI playback thread, CheckServiceTimeouts() on the ensemble source's
+	// reader thread and Reset() on the UI thread: this serialises every access to the state above
+	std::mutex mutex;
 
 	void RemoveService(const FIC_SERVICE& service);
 	void PruneStaleSubchannels();

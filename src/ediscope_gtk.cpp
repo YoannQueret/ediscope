@@ -2158,6 +2158,9 @@ void EDIScopeGTK::StopEnsembleSource() {
 		ensemble_source = nullptr;
 	}
 
+	// frames of the previous connection still waiting for their due time must not refill the FIC
+	// (nor play their audio) after the reset below
+	ensemble_player->Flush();
 	EnsembleResetFIC();
 	services_table_liststore->clear();	// TODO: prevent on_services_table_selection_changed() being called for each deleted row
 	logs_window.Clear();

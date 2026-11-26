@@ -192,6 +192,12 @@ public:
 	// base implementation
 	virtual void PrepareStop() {reporting_enabled = false;}
 
+	// drops every frame received but not decoded yet, and returns only once no frame is being
+	// decoded any more - call it after the source has stopped, before resetting the FIC, so nothing
+	// from the previous connection reaches the decoders afterwards. Nothing to do for a player that
+	// decodes each frame as soon as it is received
+	virtual void Flush() {}
+
 	void ProcessFrame(const uint8_t *data);
 
 	bool IsSameAudioService(const AUDIO_SERVICE& audio_service);

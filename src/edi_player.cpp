@@ -28,6 +28,7 @@
 EDIPlayer::EDIPlayer(AudioOutputType audio_output_type, bool disable_int_catch_up, EnsemblePlayerObserver *observer)
 		: EnsemblePlayer(audio_output_type, disable_int_catch_up, observer) {
 	do_exit = false;
+	flush_generation = 0;
 	last_margin_delay_ms = 0.0;
 	last_buffer_delay_ms = 0.0;
 	last_tist_at_fct0_ms = 0.0;
@@ -46,6 +47,19 @@ void EDIPlayer::PrepareStop() {
 	std::lock_guard<std::mutex> lock(queue_mutex);
 	do_exit = true;
 	queue_cv.notify_one();
+}
+
+void EDIPlayer::Flush() {
+	{
+		std::lock_guard<std::mutex> lock(queue_mutex);
+		queue.clear();
+		flush_generation++;
+	}
+	// wakes up a playback thread waiting for a (now dropped) frame's due time
+	queue_cv.notify_one();
+
+	// a frame already being decoded finishes first; any later one sees the new generation
+	std::lock_guard<std::mutex> lock(playback_mutex);
 }
 
 void EDIPlayer::DecodeFrame(const uint8_t *edi_frame) {
@@ -202,6 +216,7 @@ void EDIPlayer::DecodeFrame(const uint8_t *edi_frame) {
 void EDIPlayer::PlaybackThreadMain() {
 	while(true) {
 		QueuedFrame frame;
+		unsigned long generation;
 		{
 			std::unique_lock<std::mutex> lock(queue_mutex);
 			queue_cv.wait(lock, [this]{return do_exit || !queue.empty();});
@@ -211,6 +226,7 @@ void EDIPlayer::PlaybackThreadMain() {
 				return;
 			frame = std::move(queue.front());
 			queue.pop_front();
+			generation = flush_generation;
 		}
 
 		if(frame.has_time) {
@@ -229,11 +245,20 @@ void EDIPlayer::PlaybackThreadMain() {
 			// a mux with a multi-second tist_offset, can be as long as that offset itself for the
 			// very first frame
 			std::unique_lock<std::mutex> lock(queue_mutex);
-			queue_cv.wait_until(lock, target, [this]{return do_exit;});
+			queue_cv.wait_until(lock, target, [this, generation]{return do_exit || flush_generation != generation;});
 			if(do_exit)
 				return;
 		}
 
+		// checked again with playback_mutex held, so Flush() either drops this frame or waits for it
+		std::lock_guard<std::mutex> playback_lock(playback_mutex);
+		{
+			std::lock_guard<std::mutex> lock(queue_mutex);
+			if(do_exit)
+				return;
+			if(flush_generation != generation)
+				continue;
+		}
 		PlaybackFrame(&frame.data[0]);
 	}
 }
