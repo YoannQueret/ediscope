@@ -80,8 +80,9 @@ add_executable(ediscope ${ediscope_sources} ${ediscope_qt_sources})
 set_target_properties(ediscope PROPERTIES AUTOMOC ON)
 target_link_libraries(ediscope ${common_link_list} Qt6::Widgets)
 if(WIN32)
-    # a GUI application: no console window
+    # a GUI application: no console window; one self-contained executable (C/C++ runtime included)
     set_target_properties(ediscope PROPERTIES WIN32_EXECUTABLE ON)
+    target_link_options(ediscope PRIVATE -static)
 endif()
 install(TARGETS ediscope DESTINATION bin)
 

@@ -1,5 +1,6 @@
-# Windows build: a portable zip (ediscope.exe + every DLL it needs), built with MSYS2 (UCRT64,
-# MinGW-w64) - on every tag (attached to its GitHub release), or by hand from the Actions tab
+# Windows build: one self-contained ediscope.exe (every library linked statically, Qt included),
+# built with MSYS2 (UCRT64, MinGW-w64) - on every tag (attached to its GitHub release), or by hand
+# from the Actions tab
 name: Windows build
 
 on:
@@ -9,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # to attach the zip to the tag's release
+  contents: write  # to attach the executable to the tag's release
 
 jobs:
   windows:
@@ -34,13 +35,12 @@ jobs:
           update: true
           install: >-
             git
-            zip
           pacboy: >-
             toolchain:p
             cmake:p
             ninja:p
             pkgconf:p
-            qt6-base:p
+            qt6-static:p
             SDL2:p
             mpg123:p
             fdk-aac:p
@@ -56,33 +56,25 @@ jobs:
       - name: Package
         run: |
           VERSION=$(git describe --tags --dirty)
-          DIST=ediscope-$VERSION-windows-x64
-          mkdir -p "$DIST"
-          cp build/src/ediscope.exe "$DIST/"
+          EXE=ediscope-$VERSION-windows-x64.exe
+          cp build/src/ediscope.exe "$EXE"
 
-          # Qt DLLs and plugins (platform, styles, image formats, TLS)
-          WINDEPLOYQT=$(command -v windeployqt6 || command -v windeployqt || ls /ucrt64/share/qt6/bin/windeployqt*.exe 2>/dev/null | head -n 1)
-          "$WINDEPLOYQT" --release --no-translations --no-system-d3d-compiler --no-opengl-sw "$DIST/ediscope.exe"
+          # self-contained: only Windows' own DLLs may be needed, none from MSYS2
+          ldd "$EXE"
+          if ldd "$EXE" | grep -i '/ucrt64/'; then
+            echo "::error::ediscope.exe still depends on MSYS2 DLLs (listed above)"
+            exit 1
+          fi
 
-          # every other DLL from MSYS2 that the executable or a Qt plugin needs (SDL2, mpg123,
-          # fdk-aac, OpenSSL, iconv, the MinGW runtime, ...)
-          for f in $(find "$DIST" -name '*.exe' -o -name '*.dll'); do
-            ldd "$f" | awk '/\/ucrt64\// {print $3}'
-          done | sort -u | while read -r dll; do
-            cp -n "$dll" "$DIST/"
-          done
-
-          cp COPYING README.md "$DIST/"
-          zip -r "$DIST.zip" "$DIST"
-          echo "DIST=$DIST" >> "$GITHUB_ENV"
+          echo "EXE=$EXE" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.DIST }}
-          path: ${{ env.DIST }}.zip
+          name: ${{ env.EXE }}
+          path: ${{ env.EXE }}
 
       - name: Attach to the release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.DIST }}.zip
+          files: ${{ env.EXE }}

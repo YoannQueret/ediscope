@@ -103,9 +103,27 @@ endif()
 find_package(PkgConfig)
 find_package(Threads REQUIRED)
 
+if(WIN32)
+    # Windows: one self-contained ediscope.exe - every library is linked statically. MSYS2 provides
+    # them as .a, and Qt as its qt6-static package, installed in <MSYS2 prefix>/qt6-static
+    set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+    get_filename_component(MINGW_PREFIX "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    get_filename_component(MINGW_PREFIX "${MINGW_PREFIX}" DIRECTORY)
+    list(PREPEND CMAKE_PREFIX_PATH "${MINGW_PREFIX}/qt6-static")
+endif()
+
+# a pkg-config package's libraries, as listed for static linking (Libs.private too) on Windows
+macro(use_static_pkg prefix)
+    if(WIN32)
+        set(${prefix}_LIBRARIES ${${prefix}_STATIC_LIBRARIES})
+        set(${prefix}_LIBRARY_DIRS ${${prefix}_STATIC_LIBRARY_DIRS})
+    endif()
+endmacro()
+
 # SDL2
 if(NOT DISABLE_SDL)
     pkg_check_modules(SDL2 sdl2 REQUIRED)
+    use_static_pkg(SDL2)
 	include_directories(${SDL2_INCLUDE_DIRS})
 	link_directories(${SDL2_LIBRARY_DIRS})
 	if(WIN32)
@@ -119,15 +137,23 @@ endif()
 
 # libmpg123
 pkg_check_modules(MPG123 libmpg123 REQUIRED)
+use_static_pkg(MPG123)
 include_directories(${MPG123_INCLUDE_DIRS})
 link_directories(${MPG123_LIBRARY_DIRS})
 
 # Qt 6 Widgets - the ediscope application itself
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
+if(WIN32)
+    get_target_property(QT_CORE_TYPE Qt6::Core TYPE)
+    if(NOT QT_CORE_TYPE STREQUAL "STATIC_LIBRARY")
+        message(FATAL_ERROR "Windows: a static Qt 6 is required (MSYS2 package qt6-static), found ${Qt6_DIR}")
+    endif()
+endif()
 
 # openssl - TLS transport only (for radiodns.cpp's HTTPS logo/SI.xml fetches); all actual
 # DAB/EDI/RadioDNS protocol parsing stays hand-rolled
 pkg_check_modules(OPENSSL openssl REQUIRED)
+use_static_pkg(OPENSSL)
 include_directories(${OPENSSL_INCLUDE_DIRS})
 link_directories(${OPENSSL_LIBRARY_DIRS})
 
@@ -135,6 +161,8 @@ if(USE_FDK-AAC)
     # fdk-aac / fdk-aac-dabplus
     pkg_check_modules(FDKAAC fdk-aac)
     pkg_check_modules(FDKAAC-DABPLUS fdk-aac-dabplus)
+    use_static_pkg(FDKAAC)
+    use_static_pkg(FDKAAC-DABPLUS)
     if(NOT(FDKAAC_FOUND OR FDKAAC-DABPLUS_FOUND))
         message(FATAL_ERROR "fdk-aac or fdk-aac-dabplus required to compile EDIScope with USE_FDK-AAC\n")
     endif()
