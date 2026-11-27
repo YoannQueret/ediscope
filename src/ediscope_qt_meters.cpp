@@ -25,7 +25,6 @@
 #include <cmath>
 
 #include <QActionGroup>
-#include <QContextMenuEvent>
 #include <QLinearGradient>
 #include <QMenu>
 #include <QPainter>
@@ -352,7 +351,7 @@ EDIScopeQtSpectrum::EDIScopeQtSpectrum(QWidget *parent) : QWidget(parent), has_d
 	SetChannels(1);
 }
 
-void EDIScopeQtSpectrum::contextMenuEvent(QContextMenuEvent *event) {
+void EDIScopeQtSpectrum::ShowDisplayMenu(const QPoint& global_pos) {
 	QMenu menu(this);
 	QActionGroup group(&menu);
 	QAction *bubble = menu.addAction("Bubble");
@@ -363,7 +362,7 @@ void EDIScopeQtSpectrum::contextMenuEvent(QContextMenuEvent *event) {
 	}
 	(display_mode == DisplayMode::Bubble ? bubble : bar)->setChecked(true);
 
-	QAction *chosen = menu.exec(event->globalPos());
+	QAction *chosen = menu.exec(global_pos);
 	if(chosen == bubble)
 		display_mode = DisplayMode::Bubble;
 	else if(chosen == bar)

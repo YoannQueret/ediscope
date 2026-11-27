@@ -23,6 +23,8 @@
 #include <QColor>
 #include <QFont>
 #include <QFrame>
+#include <QAbstractButton>
+#include <QEnterEvent>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QTableWidget>
@@ -133,6 +135,29 @@ public:
 	void SetAlert(const QString& text, const QString& tooltip = QString());
 	// an extra widget in the title strip, on the right, just before the info text
 	void AddHeadWidget(QWidget *widget);
+	// an extra widget in the title strip, right after the title
+	void AddTitleWidget(QWidget *widget);
+};
+
+
+
+// --- EDIScopeQtIconButton -----------------------------------------------------------------
+// a small, flat button with a drawn icon - in the theme's colours (the accent while hovered), so it
+// looks the same on every system and follows theme changes - for an action next to a title or a
+// value: a graph, details (ⓘ), a choice (▾)
+class EDIScopeQtIconButton : public QAbstractButton {
+	Q_OBJECT
+public:
+	enum class Icon {GRAPH, INFO, MENU};
+private:
+	Icon icon;
+protected:
+	void paintEvent(QPaintEvent *event) override;
+	void enterEvent(QEnterEvent *event) override;
+	void leaveEvent(QEvent *event) override;
+public:
+	EDIScopeQtIconButton(Icon icon, const QString& tooltip, QWidget *parent = nullptr);
+	QSize sizeHint() const override {return QSize(18, 18);}
 };
 
 #endif /* EDISCOPE_QT_THEME_H_ */

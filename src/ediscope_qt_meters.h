@@ -127,9 +127,11 @@ private:
 	static double FreqToFraction(double freq_hz);
 protected:
 	void paintEvent(QPaintEvent *event) override;
-	void contextMenuEvent(QContextMenuEvent *event) override;
 public:
 	EDIScopeQtSpectrum(QWidget *parent = nullptr);
+	// the display style menu (bubble/bar), at the given global position - opened by the ▾ button
+	// next to the spectrum's title
+	void ShowDisplayMenu(const QPoint& global_pos);
 	void SetSpectrum(const AUDIO_SPECTRUM& spectrum);
 	void Reset();
 };

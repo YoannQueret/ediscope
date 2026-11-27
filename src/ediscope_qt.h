@@ -57,6 +57,7 @@
 #include "ediscope_qt_announcements.h"
 #include "ediscope_qt_mnsc.h"
 #include "ediscope_qt_image_archive.h"
+#include "ediscope_qt_margin.h"
 #include "mnsc_decoder.h"
 #include "fig_analyzer.h"
 #include "eti_source.h"
@@ -250,6 +251,15 @@ private:
 	// everything known about the ensemble/multiplex, as selectable text - opened by a click on the
 	// services title
 	EDI_TIMING last_edi_timing;
+
+	// the EDI margin over the last 3 hours, recorded all the time - shown as a graph by a click on it
+	EDIScopeQtMarginGraph::history_t margin_history;
+	// the first values after the margin becomes available (new source, reconnection) aren't settled
+	// yet: recorded only from MARGIN_SETTLE_MS after that on
+	static const int64_t MARGIN_SETTLE_MS = 3000;
+	int64_t margin_valid_since_ms = 0;	// 0: no valid margin (yet/anymore)
+	int64_t margin_last_ms = 0;			// the last valid margin received - none for 2 s: it settles again
+	void ShowMarginGraph();
 	void ShowEnsembleInfo();
 	QString EnsembleInfoText(QString *label = nullptr);
 
@@ -345,6 +355,8 @@ private:
 	QLabel *status_ensemble;
 	QLabel *status_datetime;
 	QLabel *status_edi_delay;
+	EDIScopeQtIconButton *btn_margin_graph;		// next to the margin: its graph
+	EDIScopeQtIconButton *btn_ensemble_info;	// next to the services title: the ensemble's details
 	QLabel *status_asu;
 	QLabel *status_fib;
 	QProgressBar *progress_position;

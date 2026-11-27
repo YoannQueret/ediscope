@@ -456,6 +456,11 @@ EDIScopeQtPanel::EDIScopeQtPanel(const QString& title, QWidget *parent) : QFrame
 	layout->addLayout(body_layout, 1);
 }
 
+void EDIScopeQtPanel::AddTitleWidget(QWidget *widget) {
+	widget->setParent(head_layout->parentWidget());
+	head_layout->insertWidget(head_layout->indexOf(title_label) + 1, widget);
+}
+
 void EDIScopeQtPanel::AddHeadWidget(QWidget *widget) {
 	widget->setParent(head_layout->parentWidget());
 	head_layout->insertWidget(head_layout->indexOf(info_label), widget);
@@ -466,3 +471,61 @@ void EDIScopeQtPanel::SetAlert(const QString& text, const QString& tooltip) {
 	alert_label->setToolTip(tooltip);
 	alert_label->setVisible(!text.isEmpty());
 }
+
+
+// --- EDIScopeQtIconButton -----------------------------------------------------------------
+EDIScopeQtIconButton::EDIScopeQtIconButton(Icon icon, const QString& tooltip, QWidget *parent) : QAbstractButton(parent), icon(icon) {
+	setToolTip(tooltip);
+	setCursor(Qt::PointingHandCursor);
+	setFocusPolicy(Qt::NoFocus);
+	setFixedSize(sizeHint());
+}
+
+void EDIScopeQtIconButton::enterEvent(QEnterEvent *event) {
+	update();
+	QAbstractButton::enterEvent(event);
+}
+
+void EDIScopeQtIconButton::leaveEvent(QEvent *event) {
+	update();
+	QAbstractButton::leaveEvent(event);
+}
+
+void EDIScopeQtIconButton::paintEvent(QPaintEvent* /*event*/) {
+	QPainter painter(this);
+	painter.setRenderHint(QPainter::Antialiasing, true);
+	QColor color = !isEnabled() ? EDIScopeQtTheme::text_disabled : (underMouse() ? EDIScopeQtTheme::accent : EDIScopeQtTheme::text_secondary);
+	QPen pen(color, 1.5);
+	pen.setCapStyle(Qt::RoundCap);
+	pen.setJoinStyle(Qt::RoundJoin);
+	painter.setPen(pen);
+	QRectF r = QRectF(rect()).adjusted(2.5, 2.5, -2.5, -2.5);
+
+	switch(icon) {
+	case Icon::GRAPH: {
+		// axes and a zigzag line
+		painter.drawLine(QPointF(r.left(), r.top()), QPointF(r.left(), r.bottom()));
+		painter.drawLine(QPointF(r.left(), r.bottom()), QPointF(r.right(), r.bottom()));
+		QPointF points[] = {
+			{r.left() + 2, r.bottom() - 3}, {r.left() + r.width() * 0.35, r.top() + r.height() * 0.45},
+			{r.left() + r.width() * 0.6, r.bottom() - r.height() * 0.4}, {r.right(), r.top() + 1},
+		};
+		painter.drawPolyline(points, 4);
+		break; }
+	case Icon::INFO: {
+		// a circle with an "i"
+		painter.drawEllipse(r);
+		QPointF c = r.center();
+		painter.drawLine(QPointF(c.x(), c.y() - 0.5), QPointF(c.x(), r.bottom() - 3));
+		painter.setBrush(color);
+		painter.drawEllipse(QPointF(c.x(), r.top() + 3.5), 0.6, 0.6);
+		break; }
+	case Icon::MENU: {
+		// a down-pointing triangle
+		painter.setBrush(color);
+		QPointF points[] = {{r.left() + 2, r.center().y() - 2}, {r.right() - 2, r.center().y() - 2}, {r.center().x(), r.center().y() + 3}};
+		painter.drawPolygon(points, 3);
+		break; }
+	}
+}
+

@@ -625,6 +625,13 @@ void EDIScopeQt::InitWidgets() {
 
 	auto add_meter = [&](const QString& title, QWidget *meter, int column) {
 		EDIScopeQtPanel *panel = new EDIScopeQtPanel(title, central);
+		if(meter == spectrum) {
+			EDIScopeQtIconButton *display = new EDIScopeQtIconButton(EDIScopeQtIconButton::Icon::MENU, "Display style");
+			connect(display, &QAbstractButton::clicked, this, [this, display]() {
+				spectrum->ShowDisplayMenu(display->mapToGlobal(QPoint(0, display->height())));
+			});
+			panel->AddTitleWidget(display);
+		}
 		panel->BodyLayout()->setContentsMargins(0, 0, 0, 9);	// keeps clear of the panel's rounded bottom corners
 		// a fixed-width meter is centered in its panel (which can be wider, e.g. for its title);
 		// Spectrum takes the whole width
@@ -704,6 +711,16 @@ void EDIScopeQt::InitWidgets() {
 	// (caught by the application-wide event filter)
 	status_asu->setFixedWidth(QFontMetrics(mono).horizontalAdvance("▶ Programme Information") + 24);
 	status_asu->setCursor(Qt::PointingHandCursor);
+	status_edi_delay->setCursor(Qt::PointingHandCursor);	// a click: its evolution (ShowMarginGraph)
+
+	btn_ensemble_info = new EDIScopeQtIconButton(EDIScopeQtIconButton::Icon::INFO, "Ensemble details");
+	connect(btn_ensemble_info, &QAbstractButton::clicked, this, &EDIScopeQt::ShowEnsembleInfo);
+	panel_services->AddTitleWidget(btn_ensemble_info);
+	btn_ensemble_info->hide();	// until an ensemble is known
+
+	btn_margin_graph = new EDIScopeQtIconButton(EDIScopeQtIconButton::Icon::GRAPH, "EDI margin graph", this);
+	connect(btn_margin_graph, &QAbstractButton::clicked, this, &EDIScopeQt::ShowMarginGraph);
+	btn_margin_graph->hide();	// until there is a margin
 	// a click on the services title: everything about the ensemble (see ShowEnsembleInfo)
 	panel_services->TitleLabel()->setCursor(Qt::PointingHandCursor);
 	panel_services->TitleLabel()->setToolTip("Click for every detail of the ensemble");
@@ -719,6 +736,7 @@ void EDIScopeQt::InitWidgets() {
 	status_ensemble->hide();
 	status_datetime->hide();
 	statusBar()->addWidget(status_edi_delay);
+	statusBar()->addWidget(btn_margin_graph);
 	statusBar()->addPermanentWidget(progress_position);
 	statusBar()->addPermanentWidget(status_fib);
 
@@ -1096,6 +1114,7 @@ void EDIScopeQt::UpdateEnsembleDisplay() {
 		if(!status_ensemble->text().contains("Waiting"))
 			status_ensemble->setText(ColoredText("Ensemble: -", EDIScopeQtTheme::text_muted));
 		status_ensemble->setToolTip(QString());
+		btn_ensemble_info->hide();
 		if(!panel_services->property("waiting").toBool()) {
 			panel_services->SetTitle("Services");
 			panel_services->TitleLabel()->setToolTip(QString());	// nothing to show yet
@@ -1139,6 +1158,7 @@ void EDIScopeQt::UpdateEnsembleDisplay() {
 	status_ensemble->setText(text);
 	status_ensemble->setToolTip(QString::fromStdString(tooltip_text));
 	panel_services->SetTitle("Services — " + QString::fromStdString(label_plain) + " (EId " + eid + ")");
+	btn_ensemble_info->show();
 	panel_services->TitleLabel()->setToolTip("Click for every detail of the ensemble");
 }
 
@@ -1263,6 +1283,9 @@ void EDIScopeQt::StopEnsembleSource() {
 	mnsc_window->Clear();
 	known_subchannels.clear();
 	known_data_service_sids.clear();
+	margin_history.clear();
+	margin_valid_since_ms = 0;
+	margin_last_ms = 0;
 	known_data_service_ua_types.clear();
 	ensemble = FIC_ENSEMBLE();
 	panel_services->setProperty("waiting", false);
@@ -1277,6 +1300,7 @@ void EDIScopeQt::StopEnsembleSource() {
 	status_datetime->clear();
 	status_datetime->setToolTip("Local date/time (from the ensemble)");
 	status_edi_delay->clear();
+	btn_margin_graph->hide();
 	edi_timing_valid = false;
 
 	utc_dt_curr = FIC_DAB_DT();
@@ -1987,6 +2011,79 @@ void EDIScopeQt::ShowEnsembleInfo() {
 }
 
 
+// --- EDI margin graph -----------------------------------------------------------------
+void EDIScopeQt::ShowMarginGraph() {
+	QDialog dialog(this);
+	dialog.setWindowTitle("EDI margin");
+	dialog.resize(1150, 520);
+	QVBoxLayout *layout = new QVBoxLayout(&dialog);
+
+	QLabel *stats = new QLabel(&dialog);
+	stats->setFont(EDIScopeQtTheme::MonoFont());
+	stats->setTextFormat(Qt::RichText);
+	stats->setTextInteractionFlags(Qt::TextSelectableByMouse);
+	layout->addWidget(stats);
+
+	QLabel *note = new QLabel("How far ahead of its own timestamp each EDI frame arrives (negative: early, as it should be). From now "
+			"(left) to 3 hours ago (right): every value over the last minute, then one average per minute up to 30 minutes ago, "
+			"then one per 5 minutes - each with the band between the minimum and maximum of its period. Recorded since the source started.", &dialog);
+	note->setWordWrap(true);
+	EDIScopeQtTheme::SetRole(note, "muted");
+	layout->addWidget(note);
+
+	EDIScopeQtMarginGraph *graph = new EDIScopeQtMarginGraph(&dialog);
+	layout->addWidget(graph, 1);
+
+	QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+	connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+	layout->addWidget(buttons);
+
+	// real time: refreshed twice a second
+	auto refresh = [this, graph, stats]() {
+		int64_t now = SteadyNowMs();
+		graph->SetData(margin_history, now, edi_timing_valid, last_edi_timing.margin_delay_ms, last_edi_timing.tist_at_fct0_ms);
+
+		// averages over the last 1 and 5 minutes, extremes over everything kept
+		auto average = [this, now](int64_t span_ms, bool& found) {
+			double sum = 0;
+			size_t count = 0;
+			for(const std::pair<int64_t, double>& sample : margin_history)
+				if(now - sample.first <= span_ms) {
+					sum += sample.second;
+					count++;
+				}
+			found = count > 0;
+			return found ? sum / count : 0;
+		};
+		auto ms = [](double v) {return QString::number((int) std::lround(v)) + " ms";};
+		if(margin_history.empty()) {
+			stats->setText("No EDI margin yet.");
+			return;
+		}
+		double min_v = margin_history.front().second, max_v = min_v;
+		for(const std::pair<int64_t, double>& sample : margin_history) {
+			min_v = std::min(min_v, sample.second);
+			max_v = std::max(max_v, sample.second);
+		}
+		bool found_1, found_5;
+		double avg_1 = average(60 * 1000, found_1), avg_5 = average(5 * 60 * 1000, found_5);
+		double kept_min = (now - margin_history.front().first) / 60000.0;
+		stats->setText(QString("Now: <b>%1</b> &nbsp;·&nbsp; Average 1 min: %2 &nbsp;·&nbsp; 5 min: %3 &nbsp;·&nbsp; Min/max over %4: %5 / %6")
+				.arg(edi_timing_valid ? ms(last_edi_timing.margin_delay_ms) : QString("—"))
+				.arg(found_1 ? ms(avg_1) : QString("—")).arg(found_5 ? ms(avg_5) : QString("—"))
+				.arg(kept_min < 60 ? QString("%1 min").arg((int) std::ceil(kept_min)) : QString("%1 h").arg(kept_min / 60, 0, 'f', 1))
+				.arg(ms(min_v)).arg(ms(max_v)));
+	};
+	refresh();
+	QTimer refresh_timer;
+	connect(&refresh_timer, &QTimer::timeout, &dialog, refresh);
+	refresh_timer.start(500);
+
+	EDIScopeQtTheme::CenterOnWindow(&dialog, this);
+	dialog.exec();
+}
+
+
 // --- new version check -----------------------------------------------------------------
 // the X.Y.Z at the start of a version ("2.0.5", "2.0.5-3-g1234567-dirty"), as a comparable list
 static std::vector<int> VersionNumbers(const QString& version) {
@@ -2265,7 +2362,8 @@ bool EDIScopeQt::eventFilter(QObject *watched, QEvent *event) {
 	// the status bar's details (tooltips), and the announcements indicator's (in the services
 	// title), shown as soon as the pointer is on them - as a slide's popup - and kept up to date
 	// while it stays there (e.g. the margin, updated 4 times a second)
-	for(QLabel *label : {status_connection, status_ensemble, status_datetime, status_edi_delay, status_asu, status_fib}) {
+	for(QWidget *label : std::initializer_list<QWidget*>{status_connection, status_ensemble, status_datetime, status_edi_delay, status_asu, status_fib,
+			btn_margin_graph, btn_ensemble_info}) {
 		if(watched != label)
 			continue;
 		switch(event->type()) {
@@ -2290,6 +2388,11 @@ bool EDIScopeQt::eventFilter(QObject *watched, QEvent *event) {
 		default:
 			break;
 		}
+	}
+
+	if(watched == status_edi_delay && event->type() == QEvent::MouseButtonRelease) {
+		ShowMarginGraph();
+		return true;
 	}
 
 	if(watched == panel_services->TitleLabel() && event->type() == QEvent::MouseButtonRelease) {
@@ -2390,10 +2493,25 @@ void EDIScopeQt::OnEDITiming(const EDI_TIMING& timing) {
 	edi_timing_valid = timing.valid;
 	last_edi_timing = timing;
 	if(timing.valid) {
+		int64_t now = SteadyNowMs();
+		// the margin available again: just started, or after an interruption (no value for 2 s,
+		// e.g. a reconnection - the player itself never reports it as invalid)
+		if(!margin_valid_since_ms || now - margin_last_ms > 2000)
+			margin_valid_since_ms = now;
+		margin_last_ms = now;
+		if(now - margin_valid_since_ms >= MARGIN_SETTLE_MS)
+			margin_history.emplace_back(now, timing.margin_delay_ms);
+		while(!margin_history.empty() && now - margin_history.front().first > EDIScopeQtMarginGraph::HISTORY_MS)
+			margin_history.pop_front();
+
 		status_edi_delay->setText("Margin: " + QString::number((int) std::lround(timing.margin_delay_ms)) + " ms");
+		btn_margin_graph->show();
 		status_edi_delay->setToolTip("Margin delay (how far ahead of schedule frames arrive)\n"
-				"TIST@FCT0: " + QString::number((int) std::lround(timing.tist_at_fct0_ms)) + " ms");
+				"TIST@FCT0: " + QString::number((int) std::lround(timing.tist_at_fct0_ms)) + " ms\n"
+				"Click for its evolution");
 	} else {
+		margin_valid_since_ms = 0;	// the next valid values settle again (e.g. after a reconnection)
+		btn_margin_graph->hide();
 		status_edi_delay->clear();
 		status_edi_delay->setToolTip(QString());
 	}
