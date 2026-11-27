@@ -50,6 +50,7 @@
 #include <QMessageBox>
 #include <QPointer>
 #include <QStatusBar>
+#include <QStyleHints>
 #include <QToolBar>
 #include <QVBoxLayout>
 
@@ -188,6 +189,12 @@ EDIScopeQt::EDIScopeQt(EDIScopeQtOptions options) :
 
 	InitMenus();
 	InitWidgets();
+
+	// the "System" theme follows the desktop's colour scheme as it changes
+	connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, [this]() {
+		if(EDIScopeQtTheme::Current() == EDIScopeQtTheme::Theme::SYSTEM)
+			ApplyTheme(EDIScopeQtTheme::Theme::SYSTEM);
+	});
 
 	// keyboard shortcuts work from anywhere in the window, except while typing a URI
 	qApp->installEventFilter(this);
@@ -1503,9 +1510,10 @@ void EDIScopeQt::ShowSettings() {
 	theme_title->setStyleSheet("font-weight: 600;");
 	layout->addWidget(theme_title);
 	QComboBox *theme_combo = new QComboBox(&dialog);
+	theme_combo->addItem("System (follows the desktop)", EDIScopeQtTheme::ThemeName(EDIScopeQtTheme::Theme::SYSTEM));
 	theme_combo->addItem("Dark", EDIScopeQtTheme::ThemeName(EDIScopeQtTheme::Theme::DARK));
 	theme_combo->addItem("Light", EDIScopeQtTheme::ThemeName(EDIScopeQtTheme::Theme::LIGHT));
-	theme_combo->setCurrentIndex(EDIScopeQtTheme::Current() == EDIScopeQtTheme::Theme::LIGHT ? 1 : 0);
+	theme_combo->setCurrentIndex(theme_combo->findData(EDIScopeQtTheme::ThemeName(EDIScopeQtTheme::Current())));
 	theme_combo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
 	QHBoxLayout *theme_layout = new QHBoxLayout();
 	theme_layout->addWidget(theme_combo);

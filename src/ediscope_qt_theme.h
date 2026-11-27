@@ -34,7 +34,8 @@
 // widgets read these colours when they paint; text given a role (SetRole) is coloured by the style
 // sheet; anything else is redrawn by its owner when the theme changes
 namespace EDIScopeQtTheme {
-	enum class Theme {DARK, LIGHT};
+	// SYSTEM: dark or light, as the desktop's colour scheme (dark if the desktop doesn't tell)
+	enum class Theme {SYSTEM, DARK, LIGHT};
 
 	// general
 	extern QColor window_bg;		// main window background
@@ -80,9 +81,10 @@ namespace EDIScopeQtTheme {
 	extern QColor slide_waiting;	// "waiting for slide" placeholder
 
 	void Apply(QApplication& app, Theme theme);
-	Theme Current();
-	QString ThemeName(Theme theme);		// "dark", "light" - as saved in the settings
-	Theme ThemeFromName(const QString& name);
+	Theme Current();			// as chosen, SYSTEM included
+	Theme CurrentEffective();	// DARK or LIGHT, as applied
+	QString ThemeName(Theme theme);		// "system", "dark", "light" - as saved in the settings
+	Theme ThemeFromName(const QString& name);	// SYSTEM for anything unknown (or nothing saved)
 
 	QFont MonoFont();
 

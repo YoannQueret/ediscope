@@ -23,6 +23,8 @@
 #include <vector>
 
 #include <QClipboard>
+#include <QGuiApplication>
+#include <QStyleHints>
 #include <QDir>
 #include <QMenu>
 #include <QProxyStyle>
@@ -45,7 +47,8 @@ namespace EDIScopeQtTheme {
 	QColor timeline_block, timeline_border, timeline_time;
 	QColor slide_waiting;
 
-	static Theme current_theme = Theme::DARK;
+	static Theme current_theme = Theme::SYSTEM;
+	static Theme effective_theme = Theme::DARK;
 
 	// every colour of a theme, by the name the style sheet template uses (@name@)
 	typedef std::vector<std::pair<const char*, const char*>> palette_t;
@@ -224,12 +227,24 @@ QLabel[role="error"] { color: @error@; }
 		return current_theme;
 	}
 
+	Theme CurrentEffective() {
+		return effective_theme;
+	}
+
 	QString ThemeName(Theme theme) {
-		return theme == Theme::LIGHT ? "light" : "dark";
+		switch(theme) {
+		case Theme::DARK:	return "dark";
+		case Theme::LIGHT:	return "light";
+		default:			return "system";
+		}
 	}
 
 	Theme ThemeFromName(const QString& name) {
-		return name == "light" ? Theme::LIGHT : Theme::DARK;
+		if(name == "dark")
+			return Theme::DARK;
+		if(name == "light")
+			return Theme::LIGHT;
+		return Theme::SYSTEM;
 	}
 
 	void SetRole(QWidget *widget, const char *role) {
@@ -265,6 +280,10 @@ QLabel[role="error"] { color: @error@; }
 
 	void Apply(QApplication& app, Theme theme) {
 		current_theme = theme;
+		// the desktop's colour scheme - its own, as EDIScope never sets one for the application
+		if(theme == Theme::SYSTEM)
+			theme = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Light ? Theme::LIGHT : Theme::DARK;
+		effective_theme = theme;
 		const palette_t& palette = theme == Theme::LIGHT ? light_palette : dark_palette;
 
 		struct {QColor *color; const char *name;} colors[] = {
