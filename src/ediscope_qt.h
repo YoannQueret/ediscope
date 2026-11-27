@@ -238,6 +238,14 @@ private:
 	void ArchiveSPILogos();
 	void ArchiveRDNSLogos(int eid, int sid, const RDNS_RESULT& result);
 
+	// new version check (GitHub's latest release), at startup only - shown in a banner above the
+	// services, until closed; a version closed is not shown again
+	QFrame *update_banner;
+	QLabel *update_label;
+	QString update_version;
+	void CheckForNewVersion();
+	void ShowNewVersion(const QString& version);
+
 	// date/time
 	FIC_DAB_DT utc_dt_curr;
 	int dt_lto;

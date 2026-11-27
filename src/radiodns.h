@@ -152,6 +152,10 @@ public:
 	// never required to use it
 	static bool FetchLogo(RDNS_XML_LOGO& logo);
 
+	// a plain HTTP(S) GET of a URL (no certificate validation, see HttpsGet) - also used by the
+	// new version check
+	static bool HttpGetUrl(const std::string& url, int& status, std::string& content_type, std::string& body, std::string& error);
+
 private:
 	static bool QueryCNAME(const std::string& fqdn, std::string& target, std::string& error);
 	static bool QuerySRV(const std::string& fqdn, std::string& target, int& port, std::string& error);
@@ -170,8 +174,6 @@ private:
 	// this is a diagnostic tool fetching publicly-served SI.xml/logo assets, not a security
 	// boundary, and shipping a CA trust store/verification policy is out of scope)
 	static bool HttpsGet(const std::string& host, int port, const std::string& path, int& status, std::string& content_type, std::string& body, std::string& error);
-
-	static bool HttpGetUrl(const std::string& url, int& status, std::string& content_type, std::string& body, std::string& error);
 };
 
 #endif /* RADIODNS_H_ */

@@ -38,6 +38,8 @@
 #include <QClipboard>
 #include <QCloseEvent>
 #include <QDesktopServices>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QCheckBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -227,6 +229,9 @@ EDIScopeQt::EDIScopeQt(EDIScopeQtOptions options) :
 	connect(&status_timer, &QTimer::timeout, this, &EDIScopeQt::UpdateEnsembleRecordingStatus);
 	status_timer.start(500);
 	UpdateConnectionStatus();
+
+	if(QSettings().value("update/check", true).toBool())
+		CheckForNewVersion();
 
 	// initial source from the command line: a file (or file:// URI), or stdin when something is
 	// piped in - not an interactive terminal, which would otherwise be read as an ensemble. On
@@ -465,6 +470,35 @@ void EDIScopeQt::InitWidgets() {
 	QVBoxLayout *central_layout = new QVBoxLayout(central);
 	central_layout->setContentsMargins(12, 12, 12, 12);
 	central_layout->setSpacing(12);
+
+	// a new version available (see CheckForNewVersion) - hidden until then
+	update_banner = new QFrame(central);
+	update_banner->setObjectName("panel");
+	QHBoxLayout *update_layout = new QHBoxLayout(update_banner);
+	update_layout->setContentsMargins(12, 6, 6, 6);
+	update_label = new QLabel(update_banner);
+	update_layout->addWidget(update_label, 1);
+	QPushButton *update_download = new QPushButton("Download", update_banner);
+	connect(update_download, &QPushButton::clicked, this, [this]() {
+		// built here, not taken from the response: always the project's own release on GitHub
+		QString base = "https://github.com/YoannQueret/ediscope/releases";
+#ifdef _WIN32
+		QDesktopServices::openUrl(QUrl(base + "/download/" + update_version + "/ediscope-" + update_version + "-windows-x64.exe"));
+#else
+		QDesktopServices::openUrl(QUrl(base + "/tag/" + update_version));
+#endif
+	});
+	update_layout->addWidget(update_download);
+	QToolButton *update_close = new QToolButton(update_banner);
+	update_close->setText("✕");
+	update_close->setToolTip("Don't show this version again");
+	connect(update_close, &QToolButton::clicked, this, [this]() {
+		QSettings().setValue("update/ignored_version", update_version);
+		update_banner->hide();
+	});
+	update_layout->addWidget(update_close);
+	update_banner->hide();
+	central_layout->addWidget(update_banner);
 
 	// services table + CU bar
 	panel_services = new EDIScopeQtPanel("Services", central);
@@ -1592,6 +1626,11 @@ void EDIScopeQt::ShowSettings() {
 	theme_layout->addStretch(1);
 	layout->addLayout(theme_layout);
 
+	// new version check
+	QCheckBox *update_check = new QCheckBox("Check for a new version at startup", &dialog);
+	update_check->setChecked(QSettings().value("update/check", true).toBool());
+	layout->addWidget(update_check);
+
 	// recordings folder
 	QLabel *folder_title = new QLabel("Recordings folder", &dialog);
 	folder_title->setStyleSheet("font-weight: 600; margin-top: 6px;");
@@ -1686,6 +1725,8 @@ void EDIScopeQt::ShowSettings() {
 		settings.setValue("recordings/path", folder);
 	}
 
+	settings.setValue("update/check", update_check->isChecked());
+
 	images.path = images_folder_edit->text().trimmed();
 	images.slideshow = images_slideshow->isChecked();
 	images.spi = images_spi->isChecked();
@@ -1768,6 +1809,52 @@ void EDIScopeQt::OnAnnouncementsToggled(bool checked) {
 	ann_window->show();
 	ann_window->raise();
 }
+
+// --- new version check -----------------------------------------------------------------
+// the X.Y.Z at the start of a version ("2.0.5", "2.0.5-3-g1234567-dirty"), as a comparable list
+static std::vector<int> VersionNumbers(const QString& version) {
+	QRegularExpressionMatch match = QRegularExpression("^(\\d+)\\.(\\d+)\\.(\\d+)").match(version);
+	if(!match.hasMatch())
+		return {};
+	return {match.captured(1).toInt(), match.captured(2).toInt(), match.captured(3).toInt()};
+}
+
+void EDIScopeQt::CheckForNewVersion() {
+	// GitHub's latest release, on a short-lived detached thread (network I/O); the result comes
+	// back through the application object, as for RadioDNS (the window may be gone by then)
+	QPointer<EDIScopeQt> self(this);
+	std::thread([self]() {
+		int status = 0;
+		std::string content_type, body, error;
+		bool ok = RadioDNSResolver::HttpGetUrl("https://api.github.com/repos/YoannQueret/ediscope/releases/latest", status, content_type, body, error);
+		QString tag;
+		if(ok && status == 200)
+			tag = QJsonDocument::fromJson(QByteArray::fromStdString(body)).object().value("tag_name").toString();
+		else
+			fprintf(stderr, "EDIScopeQt: new version check failed: %s\n", ok ? ("HTTP status " + std::to_string(status)).c_str() : error.c_str());
+		QMetaObject::invokeMethod(qApp, [self, tag]() {
+			if(self && !tag.isEmpty())
+				self->ShowNewVersion(tag);
+		}, Qt::QueuedConnection);
+	}).detach();
+}
+
+void EDIScopeQt::ShowNewVersion(const QString& version) {
+	// only a plain version number is used (it ends up in the download link)
+	if(!QRegularExpression("^\\d+\\.\\d+\\.\\d+$").match(version).hasMatch())
+		return;
+	std::vector<int> latest = VersionNumbers(version);
+	std::vector<int> current = VersionNumbers(EDISCOPE_VERSION);
+	if(current.empty() || !(latest > current))
+		return;
+	if(QSettings().value("update/ignored_version").toString() == version)
+		return;
+
+	update_version = version;
+	update_label->setText("EDIScope <b>" + version + "</b> is available (this is " + QString(EDISCOPE_VERSION).toHtmlEscaped() + ").");
+	update_banner->show();
+}
+
 
 // --- image archive -----------------------------------------------------------------
 void EDIScopeQt::ArchiveSPILogos() {
