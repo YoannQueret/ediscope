@@ -83,6 +83,9 @@ if(WIN32)
     # a GUI application: no console window; one self-contained executable (C/C++ runtime included)
     set_target_properties(ediscope PROPERTIES WIN32_EXECUTABLE ON)
     target_link_options(ediscope PRIVATE -static)
+    # static Qt would link every image format plugin (TIFF, WebP, ... and their libraries): only
+    # JPEG is needed - MOT slides and SPI logos are JPEG or PNG, and PNG is built into Qt itself
+    qt_import_plugins(ediscope EXCLUDE_BY_TYPE imageformats INCLUDE Qt6::QJpegPlugin)
 endif()
 install(TARGETS ediscope DESTINATION bin)
 

@@ -148,6 +148,16 @@ if(WIN32)
     if(NOT QT_CORE_TYPE STREQUAL "STATIC_LIBRARY")
         message(FATAL_ERROR "Windows: a static Qt 6 is required (MSYS2 package qt6-static), found ${Qt6_DIR}")
     endif()
+
+    # static Qt links freetype as a plain library: add what freetype itself needs (brotli, bzip2,
+    # ...), as listed by pkg-config for static linking
+    pkg_check_modules(FREETYPE_STATIC freetype2)
+    foreach(freetype_target WrapFreetype::WrapFreetype WrapSystemFreetype::WrapSystemFreetype)
+        if(TARGET ${freetype_target} AND FREETYPE_STATIC_FOUND)
+            set_property(TARGET ${freetype_target} APPEND PROPERTY INTERFACE_LINK_LIBRARIES ${FREETYPE_STATIC_STATIC_LIBRARIES})
+            message(STATUS "Static freetype: ${freetype_target} also links ${FREETYPE_STATIC_STATIC_LIBRARIES}")
+        endif()
+    endforeach()
 endif()
 
 # openssl - TLS transport only (for radiodns.cpp's HTTPS logo/SI.xml fetches); all actual
