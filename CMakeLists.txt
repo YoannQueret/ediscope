@@ -72,20 +72,28 @@ if(CMAKE_COMPILER_IS_GNUCXX)
         SET(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -s")
     endif()
     
-    # hardening (TODO: add also for clang/Cygwin)
-    add_compile_options(-fstack-protector-strong)
-    add_compile_options(-fPIE)
-    SET(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -pie")
-    if(NOT CYGWIN)
-        SET(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -z now")
+    # hardening (TODO: add also for clang/Cygwin) - ELF only, not for a Windows (MinGW) build
+    if(NOT WIN32)
+        add_compile_options(-fstack-protector-strong)
+        add_compile_options(-fPIE)
+        SET(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -pie")
+        if(NOT CYGWIN)
+            SET(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -z now")
+        endif()
     endif()
 endif()
 
 # support 2GB+ files on 32bit systems
 add_definitions(-D_FILE_OFFSET_BITS=64)
 
-# enable newer POSIX API
-add_definitions(-D_POSIX_C_SOURCE=200809L)
+if(WIN32)
+    # Windows (MinGW-w64, e.g. MSYS2): Windows 10 API (inet_pton, ...), no min/max macros from
+    # windows.h (they break std::min/std::max), and EDIScope's own main() rather than SDL's
+    add_definitions(-D_WIN32_WINNT=0x0A00 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DSDL_MAIN_HANDLED)
+else()
+    # enable newer POSIX API
+    add_definitions(-D_POSIX_C_SOURCE=200809L)
+endif()
 
 
 ########################################################################
@@ -100,6 +108,10 @@ if(NOT DISABLE_SDL)
     pkg_check_modules(SDL2 sdl2 REQUIRED)
 	include_directories(${SDL2_INCLUDE_DIRS})
 	link_directories(${SDL2_LIBRARY_DIRS})
+	if(WIN32)
+		# SDL2main brings its own WinMain() - EDIScope has its own main() (SDL_MAIN_HANDLED), and Qt its WinMain()
+		list(REMOVE_ITEM SDL2_LIBRARIES SDL2main)
+	endif()
 	list(APPEND ediscope_sources sdl_output.cpp)
 else()
     add_definitions(-DEDISCOPE_DISABLE_SDL)
@@ -170,8 +182,10 @@ endif()
 add_subdirectory(src)
 add_subdirectory(doc)
 
+if(NOT WIN32)
 install(FILES res/ediscope-icon.png DESTINATION share/icons/hicolor/256x256/apps RENAME ediscope.png)
 install(FILES res/ediscope.desktop DESTINATION share/applications)
+endif()
 
 # refresh the icon/desktop caches as part of "make install" itself, so a newly installed or
 # changed icon shows up right away, without a separate manual step after sudo make install

@@ -24,6 +24,12 @@
 #include <cstdlib>
 #include <cstring>
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windns.h>
+#include <strings.h>
+#else
 #include <arpa/nameser.h>
 #include <fcntl.h>
 #include <netdb.h>
@@ -33,14 +39,22 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#endif
 
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
 #include "xml_tree.h"
 
+#ifdef _WIN32
+// Windows: a socket is closed with closesocket() - every close() below is on a socket
+#define close(fd) closesocket(fd)
+#endif
 
+
+#ifndef _WIN32
 static const int DNS_PACKET_BUF_SIZE = NS_PACKETSZ * 4;
+#endif
 static const int HTTP_TIMEOUT_S = 5;
 
 
@@ -105,6 +119,131 @@ std::string RadioDNSResolver::BuildDABBearerURI(const std::string& gcc, int eid,
 	return uri;
 }
 
+#ifdef _WIN32
+// Windows: no res_query()/ns_*() - DnsQuery() (dnsapi), with the same results and messages
+bool RadioDNSResolver::QueryCNAME(const std::string& fqdn, std::string& target, std::string& error) {
+	PDNS_RECORDA records = nullptr;
+	DNS_STATUS status = DnsQuery_A(fqdn.c_str(), DNS_TYPE_CNAME, DNS_QUERY_STANDARD, nullptr, (PDNS_RECORD*) &records, nullptr);
+	if(status != 0) {
+		error = (status == DNS_ERROR_RCODE_NAME_ERROR) ? "not registered with RadioDNS (NXDOMAIN)" :
+				(status == DNS_INFO_NO_RECORDS) ? "no CNAME record (not registered with RadioDNS)" :
+				"DNS query failed (error " + std::to_string(status) + ")";
+		return false;
+	}
+
+	bool found = false;
+	for(PDNS_RECORDA rr = records; rr && !found; rr = rr->pNext) {
+		if(rr->wType != DNS_TYPE_CNAME || !rr->Data.CNAME.pNameHost)
+			continue;
+		target = rr->Data.CNAME.pNameHost;
+		found = true;
+	}
+	DnsRecordListFree((PDNS_RECORD) records, DnsFreeRecordList);
+
+	if(!found)
+		error = "no CNAME record in DNS response";
+	return found;
+}
+
+bool RadioDNSResolver::QuerySRV(const std::string& fqdn, std::string& target, int& port, std::string& error) {
+	PDNS_RECORDA records = nullptr;
+	DNS_STATUS status = DnsQuery_A(fqdn.c_str(), DNS_TYPE_SRV, DNS_QUERY_STANDARD, nullptr, (PDNS_RECORD*) &records, nullptr);
+	if(status != 0) {
+		error = (status == DNS_ERROR_RCODE_NAME_ERROR || status == DNS_INFO_NO_RECORDS) ?
+				"Authoritative FQDN found, but no SPI/EPG (_radioepg._tcp) SRV record" :
+				"DNS query failed (error " + std::to_string(status) + ")";
+		return false;
+	}
+
+	// lowest SRV priority value wins (RFC 2782); weight is ignored (we only ever use one target)
+	int best_priority = -1;
+	for(PDNS_RECORDA rr = records; rr; rr = rr->pNext) {
+		if(rr->wType != DNS_TYPE_SRV || !rr->Data.SRV.pNameTarget)
+			continue;
+		int priority = rr->Data.SRV.wPriority;
+		if(best_priority == -1 || priority < best_priority) {
+			best_priority = priority;
+			target = rr->Data.SRV.pNameTarget;
+			port = rr->Data.SRV.wPort;
+		}
+	}
+	DnsRecordListFree((PDNS_RECORD) records, DnsFreeRecordList);
+
+	if(best_priority == -1) {
+		error = "no usable SRV record in DNS response";
+		return false;
+	}
+	return true;
+}
+
+int RadioDNSResolver::ConnectTCP(const std::string& host, int port, std::string& error) {
+	struct addrinfo hints;
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+
+	char port_str[8];
+	snprintf(port_str, sizeof(port_str), "%d", port);
+
+	struct addrinfo *addr_res = nullptr;
+	int gai_err = getaddrinfo(host.c_str(), port_str, &hints, &addr_res);
+	if(gai_err != 0) {
+		error = std::string("can't resolve host '") + host + "': " + gai_strerror(gai_err);
+		return -1;
+	}
+
+	// non-blocking connect with a timeout, as below
+	SOCKET fd = INVALID_SOCKET;
+	for(struct addrinfo *rp = addr_res; rp; rp = rp->ai_next) {
+		fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+		if(fd == INVALID_SOCKET)
+			continue;
+
+		u_long non_blocking = 1;
+		ioctlsocket(fd, FIONBIO, &non_blocking);
+
+		if(connect(fd, rp->ai_addr, (int) rp->ai_addrlen) == 0)
+			break;	// connected immediately (rare for TCP, but possible)
+
+		if(WSAGetLastError() == WSAEWOULDBLOCK) {
+			fd_set write_fds, error_fds;
+			FD_ZERO(&write_fds);
+			FD_ZERO(&error_fds);
+			FD_SET(fd, &write_fds);
+			FD_SET(fd, &error_fds);
+			timeval tv;
+			tv.tv_sec = HTTP_TIMEOUT_S;
+			tv.tv_usec = 0;
+			if(select(0, nullptr, &write_fds, &error_fds, &tv) > 0 && FD_ISSET(fd, &write_fds)) {
+				int so_error = 0;
+				int so_len = sizeof(so_error);
+				getsockopt(fd, SOL_SOCKET, SO_ERROR, (char*) &so_error, &so_len);
+				if(so_error == 0)
+					break;	// connected
+			}
+		}
+
+		closesocket(fd);
+		fd = INVALID_SOCKET;
+	}
+	freeaddrinfo(addr_res);
+
+	if(fd == INVALID_SOCKET) {
+		error = "connection failed (timeout or refused)";
+		return -1;
+	}
+
+	// back to blocking for the rest - simpler read/write below, still timeout-guarded
+	u_long non_blocking = 0;
+	ioctlsocket(fd, FIONBIO, &non_blocking);
+
+	DWORD timeout_ms = HTTP_TIMEOUT_S * 1000;
+	setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*) &timeout_ms, sizeof(timeout_ms));
+	setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char*) &timeout_ms, sizeof(timeout_ms));
+
+	return (int) fd;
+}
+#else
 bool RadioDNSResolver::QueryCNAME(const std::string& fqdn, std::string& target, std::string& error) {
 	unsigned char answer[DNS_PACKET_BUF_SIZE];
 	int len = res_query(fqdn.c_str(), ns_c_in, ns_t_cname, answer, sizeof(answer));
@@ -254,6 +393,7 @@ int RadioDNSResolver::ConnectTCP(const std::string& host, int port, std::string&
 
 	return fd;
 }
+#endif
 
 bool RadioDNSResolver::ParseHttpResponse(const std::string& response, int& status, std::string& content_type, std::string& body, std::string& error) {
 	if(response.empty()) {

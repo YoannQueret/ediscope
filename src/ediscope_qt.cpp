@@ -28,6 +28,11 @@
 #include <cmath>
 #include <fstream>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <filesystem>
+#include <QDir>
+#include <QStandardPaths>
+#endif
 
 #include <QApplication>
 #include <QClipboard>
@@ -63,12 +68,19 @@ static const size_t NETWORK_HISTORY_MAX_ENTRIES = 20;
 // instead of being treated as a literal URI
 static const QString NETWORK_URI_BROWSE_ITEM = "Open EDI/ETI File...";
 
+#ifdef _WIN32
+// Windows: the per-user application data folder (e.g. %LOCALAPPDATA%/ediscope/ediscope), as UTF-8
+static std::string GetConfigDir() {
+	return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation).toStdString();
+}
+#else
 static std::string GetConfigDir() {
 	const char *xdg_config_home = getenv("XDG_CONFIG_HOME");
 	std::string base = (xdg_config_home && *xdg_config_home) ? xdg_config_home :
 			std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.config";
 	return base + "/ediscope";
 }
+#endif
 
 static std::string GetNetworkHistoryPath() {
 	return GetConfigDir() + "/network_history";
@@ -78,7 +90,11 @@ static std::vector<std::string> LoadNetworkHistory() {
 	static const std::string PREFIX_FILE = "file://";
 
 	std::vector<std::string> result;
+#ifdef _WIN32
+	std::ifstream file(std::filesystem::path(QString::fromStdString(GetNetworkHistoryPath()).toStdWString()));
+#else
 	std::ifstream file(GetNetworkHistoryPath());
+#endif
 	std::string line;
 	while(std::getline(file, line) && result.size() < NETWORK_HISTORY_MAX_ENTRIES)
 		// file:// sources aren't kept in history
@@ -91,12 +107,17 @@ static void SaveNetworkHistory(const std::vector<std::string>& history) {
 	std::string config_dir = GetConfigDir();
 
 	// best-effort directory creation (also covers a missing ~/.config); errors (incl. EEXIST) are ignored
+#ifdef _WIN32
+	QDir().mkpath(QString::fromStdString(config_dir));
+	std::ofstream file(std::filesystem::path(QString::fromStdString(GetNetworkHistoryPath()).toStdWString()));
+#else
 	size_t pos = config_dir.find_last_of('/');
 	if(pos != std::string::npos)
 		mkdir(config_dir.substr(0, pos).c_str(), 0755);
 	mkdir(config_dir.c_str(), 0755);
 
 	std::ofstream file(GetNetworkHistoryPath());
+#endif
 	for(const std::string& uri : history)
 		file << uri << "\n";
 }
@@ -206,8 +227,13 @@ EDIScopeQt::EDIScopeQt(EDIScopeQtOptions options) :
 	UpdateConnectionStatus();
 
 	// initial source from the command line: a file (or file:// URI), or stdin when something is
-	// piped in - not an interactive terminal, which would otherwise be read as an ensemble
+	// piped in - not an interactive terminal, which would otherwise be read as an ensemble. On
+	// Windows, a file only: a GUI application has no usable stdin
+#ifdef _WIN32
+	if(!options.filename.empty()) {
+#else
 	if(!options.filename.empty() || !isatty(fileno(stdin))) {
+#endif
 		EnsembleSource *source;
 		if(this->options.source_format == EnsembleSource::FORMAT_ETI)
 			source = new ETISource(options.filename, this);
@@ -1205,7 +1231,12 @@ void EDIScopeQt::OpenFile() {
 	if(filename.isEmpty())
 		return;
 
+#ifdef _WIN32
+	// "file:///C:/dir/file" - "file://" + "C:/dir/file" would read as a host "C:"
+	combo_uri->lineEdit()->setText(QUrl::fromLocalFile(filename).toString());
+#else
 	combo_uri->lineEdit()->setText("file://" + filename);
+#endif
 
 	// same as pressing Enter in the URI box - start right away (restart, if already connected)
 	if(btn_connect->isChecked())
@@ -1326,6 +1357,11 @@ QString EDIScopeQt::RecordingStartString(time_t start) {
 std::string EDIScopeQt::CleanFileName(std::string name) {
 	// escape the forbidden '/' character
 	std::replace(name.begin(), name.end(), '/', '_');
+#ifdef _WIN32
+	// and the other characters Windows forbids in a file name
+	for(char c : std::string("\\:*?\"<>|"))
+		std::replace(name.begin(), name.end(), c, '_');
+#endif
 	return name;
 }
 
@@ -1344,7 +1380,11 @@ void EDIScopeQt::StartServiceRecording() {
 	std::string label = FICDecoder::ConvertLabelToUTF8(service.label, nullptr);
 	std::string extension = ensemble_player->GetUntouchedStreamFileExtension();
 	std::string new_rec_filename = options.recordings_path + "/" + RecordingStartString(start).toStdString() + " - " + CleanFileName(label) + "." + extension;
+#ifdef _WIN32
+	FILE* new_rec_file = FileTools::OpenUTF8(new_rec_filename, "wb");
+#else
 	FILE* new_rec_file = fopen(new_rec_filename.c_str(), "wb");
+#endif
 	if(!new_rec_file) {
 		int fopen_errno = errno;	// save before overwrite
 		QMessageBox::critical(this, "EDIScope", "Could not start recording into\n" + QString::fromStdString(new_rec_filename) + "\n\n" + QString(strerror(fopen_errno)));
@@ -1395,7 +1435,11 @@ void EDIScopeQt::StartEnsembleRecording(bool as_eti) {
 	time_t start = time(nullptr);
 	std::string label = ensemble.IsNone() ? "ensemble" : FICDecoder::ConvertLabelToUTF8(ensemble.label, nullptr);
 	std::string new_filename = options.recordings_path + "/" + RecordingStartString(start).toStdString() + " - " + CleanFileName(label) + (as_eti ? ".eti" : ".edi");
+#ifdef _WIN32
+	FILE* new_file = FileTools::OpenUTF8(new_filename, "wb");
+#else
 	FILE* new_file = fopen(new_filename.c_str(), "wb");
+#endif
 	if(!new_file) {
 		int fopen_errno = errno;	// save before overwrite
 		QMessageBox::critical(this, "EDIScope", "Could not start recording into\n" + QString::fromStdString(new_filename) + "\n\n" + QString(strerror(fopen_errno)));

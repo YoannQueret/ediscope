@@ -58,6 +58,17 @@ public:
 };
 
 
+#ifdef _WIN32
+// --- FileTools -----------------------------------------------------------------
+// Windows only: fopen() takes a path in the ANSI code page, EDIScope's paths are UTF-8 (e.g. from
+// the file chooser, or a service label in a recording's name)
+class FileTools {
+public:
+	static FILE* OpenUTF8(const std::string& path, const char *mode);
+};
+#endif
+
+
 // --- CharsetTools -----------------------------------------------------------------
 class CharsetTools {
 private:

@@ -34,6 +34,9 @@ EnsembleSource::EnsembleSource(std::string filename, EnsembleSourceObserver *obs
 	sync_magics_max_len = 0;
 
 	input_file = nullptr;
+#ifdef _WIN32
+	input_socket = INVALID_SOCKET;
+#endif
 	ensemble_frame.resize(initial_frame_size);
 	ensemble_frames_count = 0;
 	ensemble_bytes_count = 0;
@@ -45,9 +48,59 @@ EnsembleSource::EnsembleSource(std::string filename, EnsembleSourceObserver *obs
 
 EnsembleSource::~EnsembleSource() {
 	// cleanup
+#ifdef _WIN32
+	CloseInput();
+#else
 	if(input_file && input_file != stdin)
 		fclose(input_file);
+#endif
 }
+
+#ifdef _WIN32
+void EnsembleSource::CloseInput() {
+	if(input_file && input_file != stdin)
+		fclose(input_file);
+	input_file = nullptr;
+	if(input_socket != INVALID_SOCKET)
+		closesocket(input_socket);
+	input_socket = INVALID_SOCKET;
+}
+
+int EnsembleSource::ReadInput(uint8_t *buf, size_t len) {
+	if(input_socket != INVALID_SOCKET) {
+		fd_set fds;
+		FD_ZERO(&fds);
+		FD_SET(input_socket, &fds);
+		timeval select_timeval;
+		select_timeval.tv_sec = 0;
+		select_timeval.tv_usec = 100 * 1000;
+
+		int ready_fds = select(0, &fds, nullptr, nullptr, &select_timeval);
+		if(ready_fds == SOCKET_ERROR) {
+			fprintf(stderr, "EnsembleSource: error while select (%d)\n", WSAGetLastError());
+			return READ_ERROR;
+		}
+		if(!ready_fds)
+			return READ_NOTHING;
+
+		int bytes = recv(input_socket, (char*) buf, (int) len, 0);
+		if(bytes == SOCKET_ERROR) {
+			fprintf(stderr, "EnsembleSource: error while recv (%d)\n", WSAGetLastError());
+			return READ_ERROR;
+		}
+		return bytes;	// 0: connection closed, as EOF
+	}
+
+	// a file (or stdin): select() only works on sockets on Windows - a file is always readable anyway
+	size_t bytes = fread(buf, 1, len, input_file);
+	if(bytes)
+		return (int) bytes;
+	if(feof(input_file))
+		return READ_EOF;
+	perror("EnsembleSource: error while fread");
+	return READ_ERROR;
+}
+#endif
 
 void EnsembleSource::PrintSource() {
 	fprintf(stderr, "EnsembleSource: reading %s from '%s'\n", format_name.c_str(), filename.c_str());
@@ -58,7 +111,11 @@ bool EnsembleSource::OpenFile() {
 		input_file = stdin;
 		filename = "stdin";
 	} else {
+#ifdef _WIN32
+		input_file = FileTools::OpenUTF8(filename, "rb");
+#else
 		input_file = fopen(filename.c_str(), "rb");
+#endif
 		if(!input_file) {
 			perror("EnsembleSource: error opening input file");
 			return false;
@@ -117,7 +174,11 @@ int EnsembleSource::Main() {
 	while(true) {
 		Init();
 
+#ifdef _WIN32
+		if(!HasInput()) {
+#else
 		if(!input_file) {
+#endif
 			if(!IsReconnectable()) {
 				// plain file/stdin source: Init() does nothing, this is the regular first-time open
 				if(!OpenFile())
@@ -134,10 +195,14 @@ int EnsembleSource::Main() {
 		PrintSource();
 		int result = ReadLoop();
 
+#ifdef _WIN32
+		CloseInput();
+#else
 		if(input_file && input_file != stdin) {
 			fclose(input_file);
 			input_file = nullptr;
 		}
+#endif
 
 		if(!IsReconnectable() || do_exit)
 			return result;
@@ -149,6 +214,7 @@ int EnsembleSource::Main() {
 }
 
 int EnsembleSource::ReadLoop() {
+#ifndef _WIN32
 	int file_no = fileno(input_file);
 
 	// set non-blocking mode
@@ -161,13 +227,16 @@ int EnsembleSource::ReadLoop() {
 		perror("EnsembleSource: error setting socket flags");
 		return 1;
 	}
+#endif
 
 	// a connection lost in the middle of a frame leaves the buffer sized for that frame: start the
 	// new connection from the initial (header-only) size, like the very first one
 	ensemble_frame.resize(initial_frame_size);
 
+#ifndef _WIN32
 	fd_set fds;
 	timeval select_timeval;
+#endif
 	size_t filled = 0;
 	size_t sync_skipped = 0;
 
@@ -175,6 +244,14 @@ int EnsembleSource::ReadLoop() {
 		// use loop to do some regular work
 		observer->EnsembleDoRegularWork();
 
+#ifdef _WIN32
+		int read_result = ReadInput(&ensemble_frame[filled], ensemble_frame.size() - filled);
+		if(read_result == READ_NOTHING)
+			continue;
+		if(read_result == READ_ERROR)
+			return 1;
+		size_t bytes = read_result;
+#else
 		FD_ZERO(&fds);
 		FD_SET(file_no, &fds);
 
@@ -192,13 +269,18 @@ int EnsembleSource::ReadLoop() {
 			continue;
 
 		size_t bytes = fread(&ensemble_frame[filled], 1, ensemble_frame.size() - filled, input_file);
+#endif
 
 		if(bytes > 0) {
 			ensemble_bytes_count += bytes;
 			filled += bytes;
 		}
 		if(bytes == 0) {
+#ifdef _WIN32
+			{	// ReadInput() only returns 0 at EOF
+#else
 			if(feof(input_file)) {
+#endif
 				size_t sync_skipped_eof = sync_skipped + filled;
 				if(sync_skipped_eof)
 					fprintf(stderr, "EnsembleSource: skipping %zu bytes at EOF\n", sync_skipped_eof);

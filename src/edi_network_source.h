@@ -56,6 +56,9 @@ private:
 
 	bool CheckFrameCompleted(const SYNC_MAGIC&) {return true;}	// unused, Main() is fully overridden
 
+	// one received datagram: an AF packet, or a PFT fragment
+	void ProcessDatagram(const uint8_t *buf, size_t bytes);
+
 public:
 	EDIUDPSource(std::string bind_addr, int port, EnsembleSourceObserver *observer);
 	~EDIUDPSource() {}

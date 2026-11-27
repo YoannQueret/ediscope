@@ -51,12 +51,18 @@ set(ediscope_qt_sources
     ediscope_qt_mnsc.cpp
     )
 
-# resolv: res_query()/ns_*() used by radiodns.cpp for raw CNAME/SRV DNS record lookups
+# resolv: res_query()/ns_*() used by radiodns.cpp for raw CNAME/SRV DNS record lookups - on
+# Windows, DnsQuery() (dnsapi) instead, and Winsock (ws2_32) for every socket
 # openssl: TLS transport for radiodns.cpp's HTTPS fetches (see top-level CMakeLists.txt)
+if(WIN32)
+    set(platform_link_list ws2_32 dnsapi)
+else()
+    set(platform_link_list resolv)
+endif()
 set(common_link_list
     fec
     ${ATOMIC_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${MPG123_LIBRARIES} ${SDL2_LIBRARIES} ${AAC_LIB} ${ICONV_LIBRARIES}
-    resolv ${OPENSSL_LIBRARIES}
+    ${platform_link_list} ${OPENSSL_LIBRARIES}
     )
 
 include_directories(../fec)
@@ -73,6 +79,10 @@ find_program(GTK_UPDATE_ICON_CACHE gtk-update-icon-cache)
 add_executable(ediscope ${ediscope_sources} ${ediscope_qt_sources})
 set_target_properties(ediscope PROPERTIES AUTOMOC ON)
 target_link_libraries(ediscope ${common_link_list} Qt6::Widgets)
+if(WIN32)
+    # a GUI application: no console window
+    set_target_properties(ediscope PROPERTIES WIN32_EXECUTABLE ON)
+endif()
 install(TARGETS ediscope DESTINATION bin)
 
 # Also register a desktop launcher + icon for the current user right after every build (not

@@ -90,4 +90,7 @@ target_link_libraries(fec ${M_LIB})
 # Build the tests
 ########################################################################
 
-add_subdirectory(test)
+# the tests use POSIX-only APIs (sys/resource.h)
+if(NOT WIN32)
+    add_subdirectory(test)
+endif()

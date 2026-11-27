@@ -21,14 +21,23 @@
 
 #include <signal.h>
 #include <unistd.h>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#include <winsock2.h>
+#endif
 
 #include <QApplication>
+#ifdef _WIN32
+#include <QDir>
+#endif
 #include <QIcon>
 #include <QPixmap>
 #include <QSettings>
 #include <QSocketNotifier>
 
 
+#ifndef _WIN32
 // SIGINT/SIGTERM are turned into a byte on this pipe, read back on the UI thread (a signal
 // handler itself must not touch Qt)
 static int signal_pipe[2] = {-1, -1};
@@ -39,6 +48,7 @@ static void break_handler(int) {
 		// nothing more that can safely be done in a signal handler
 	}
 }
+#endif
 
 
 static void usage(const char* exe) {
@@ -179,6 +189,11 @@ int main(int argc, char **argv) {
 	EDIScopeQtTheme::Apply(app, EDIScopeQtTheme::ThemeFromName(QSettings().value("appearance/theme", "system").toString()));
 
 	// the recordings folder chosen in Settings, unless given on the command line
+#ifdef _WIN32
+	// no /tmp on Windows: the user's temporary folder by default
+	if(!options.recordings_path_given)
+		options.recordings_path = QDir::toNativeSeparators(QDir::tempPath()).toStdString();
+#endif
 	if(!options.recordings_path_given) {
 		QString saved = QSettings().value("recordings/path").toString();
 		if(!saved.isEmpty())
@@ -190,8 +205,21 @@ int main(int argc, char **argv) {
 	icon_pixmap.loadFromData(ediscope_icon_png, ediscope_icon_png_len, "PNG");
 	QApplication::setWindowIcon(QIcon(icon_pixmap));
 
+#ifdef _WIN32
+	// Winsock, for every network source and RadioDNS
+	WSADATA wsa_data;
+	if(WSAStartup(MAKEWORD(2, 2), &wsa_data)) {
+		fprintf(stderr, "EDIScope: error while initialising Winsock\n");
+		return 1;
+	}
+	// raw PCM/WAV/untouched output to stdout must not get its line ends converted
+	if(options.pcm_output || options.wav_output || options.untouched_output)
+		_setmode(_fileno(stdout), _O_BINARY);
+#endif
+
 	EDIScopeQt *ediscope = new EDIScopeQt(options);
 
+#ifndef _WIN32
 	// handle signals: close the window (and so quit) on the UI thread
 	if(pipe(signal_pipe) == -1) {
 		perror("EDIScope: error while creating signal pipe");
@@ -217,6 +245,7 @@ int main(int argc, char **argv) {
 		perror("EDIScope: error while setting SIGTERM handler");
 		return 1;
 	}
+#endif
 
 	ediscope->show();
 	int result = app.exec();

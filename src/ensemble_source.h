@@ -19,15 +19,21 @@
 #ifndef ENSEMBLE_SOURCE_H_
 #define ENSEMBLE_SOURCE_H_
 
+#ifdef _WIN32
+#include <winsock2.h>
+#else
 #include <sys/select.h>
+#endif
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <atomic>
 #include <string>
 #include <thread>
+#ifndef _WIN32
 #include <unistd.h>
 #include <fcntl.h>
+#endif
 #include <algorithm>
 #include <vector>
 
@@ -77,6 +83,16 @@ protected:
 	std::atomic<bool> do_exit;
 
 	FILE *input_file;
+#ifdef _WIN32
+	// Windows: a socket can't be wrapped into a FILE (no fdopen() for sockets) - a network source
+	// (EDITCPSource) hands its connected socket over here instead, read with recv() by ReadLoop
+	SOCKET input_socket;
+	enum {READ_NOTHING = -2, READ_ERROR = -1, READ_EOF = 0};
+	// waits up to 100 ms for input: the number of bytes read, or one of the READ_* values
+	int ReadInput(uint8_t *buf, size_t len);
+	bool HasInput() const {return input_file || input_socket != INVALID_SOCKET;}
+	void CloseInput();
+#endif
 
 	std::vector<uint8_t> ensemble_frame;
 	size_t ensemble_frames_count;

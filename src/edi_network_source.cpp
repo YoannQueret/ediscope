@@ -20,10 +20,15 @@
 
 #include <cerrno>
 #include <cstring>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#endif
 
 
 // --- EDITCPSource -----------------------------------------------------------------
@@ -32,6 +37,41 @@ EDITCPSource::EDITCPSource(std::string host, int port, EnsembleSourceObserver *o
 		host(host), port(port) {
 }
 
+#ifdef _WIN32
+// Windows: the connected socket is handed over to EnsembleSource::ReadLoop as is (see input_socket)
+void EDITCPSource::Init() {
+	struct addrinfo hints;
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+
+	struct addrinfo *res = nullptr;
+	int gai_result = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res);
+	if(gai_result) {
+		fprintf(stderr, "EDITCPSource: error resolving '%s': %s\n", host.c_str(), gai_strerror(gai_result));
+		return;
+	}
+
+	SOCKET sock = INVALID_SOCKET;
+	for(struct addrinfo *rp = res; rp; rp = rp->ai_next) {
+		sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+		if(sock == INVALID_SOCKET)
+			continue;
+		if(connect(sock, rp->ai_addr, (int) rp->ai_addrlen) == 0)
+			break;
+		closesocket(sock);
+		sock = INVALID_SOCKET;
+	}
+	freeaddrinfo(res);
+
+	if(sock == INVALID_SOCKET) {
+		fprintf(stderr, "EDITCPSource: error connecting to '%s:%d' (%d)\n", host.c_str(), port, WSAGetLastError());
+		return;
+	}
+
+	input_socket = sock;
+}
+#else
 void EDITCPSource::Init() {
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(hints));
@@ -68,6 +108,7 @@ void EDITCPSource::Init() {
 		close(sock);
 	}
 }
+#endif
 
 void EDITCPSource::PrintSource() {
 	fprintf(stderr, "EDITCPSource: reading EDI from tcp://%s:%d\n", host.c_str(), port);
@@ -80,6 +121,85 @@ EDIUDPSource::EDIUDPSource(std::string bind_addr, int port, EnsembleSourceObserv
 		bind_addr(bind_addr), port(port) {
 }
 
+#ifdef _WIN32
+// Windows: the same as below, with Winsock's types, error reporting and socket closing
+int EDIUDPSource::Main() {
+	SOCKET sock = socket(AF_INET, SOCK_DGRAM, 0);
+	if(sock == INVALID_SOCKET) {
+		fprintf(stderr, "EDIUDPSource: error creating socket (%d)\n", WSAGetLastError());
+		return 1;
+	}
+
+	BOOL reuse = TRUE;
+	setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char*) &reuse, sizeof(reuse));
+
+	bool is_multicast = false;
+	struct in_addr mcast_test_addr;
+	if(!bind_addr.empty() && inet_pton(AF_INET, bind_addr.c_str(), &mcast_test_addr) == 1)
+		is_multicast = IN_MULTICAST(ntohl(mcast_test_addr.s_addr));
+
+	struct sockaddr_in addr;
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(port);
+	addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+	if(bind(sock, (struct sockaddr*) &addr, sizeof(addr)) == SOCKET_ERROR) {
+		fprintf(stderr, "EDIUDPSource: error binding to UDP port %d (%d)\n", port, WSAGetLastError());
+		closesocket(sock);
+		return 1;
+	}
+
+	if(is_multicast) {
+		struct ip_mreq mreq;
+		memset(&mreq, 0, sizeof(mreq));
+		inet_pton(AF_INET, bind_addr.c_str(), &mreq.imr_multiaddr);
+		mreq.imr_interface.s_addr = htonl(INADDR_ANY);
+		if(setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char*) &mreq, sizeof(mreq)) == SOCKET_ERROR) {
+			fprintf(stderr, "EDIUDPSource: error joining multicast group %s (%d)\n", bind_addr.c_str(), WSAGetLastError());
+			closesocket(sock);
+			return 1;
+		}
+	}
+
+	fprintf(stderr, "EDIUDPSource: receiving EDI from udp://%s:%d%s\n",
+			bind_addr.empty() ? "0.0.0.0" : bind_addr.c_str(), port, is_multicast ? " (multicast)" : "");
+
+	std::vector<uint8_t> buf(65536);
+
+	fd_set fds;
+	timeval select_timeval;
+
+	while(!do_exit) {
+		observer->EnsembleDoRegularWork();
+
+		FD_ZERO(&fds);
+		FD_SET(sock, &fds);
+		select_timeval.tv_sec = 0;
+		select_timeval.tv_usec = 100 * 1000;
+
+		int ready_fds = select(0, &fds, nullptr, nullptr, &select_timeval);
+		if(ready_fds == SOCKET_ERROR) {
+			fprintf(stderr, "EDIUDPSource: error while select (%d)\n", WSAGetLastError());
+			continue;
+		}
+		if(!ready_fds)
+			continue;
+
+		int bytes = recv(sock, (char*) &buf[0], (int) buf.size(), 0);
+		if(bytes <= 0) {
+			if(bytes == SOCKET_ERROR && WSAGetLastError() != WSAEWOULDBLOCK)
+				fprintf(stderr, "EDIUDPSource: error while recv (%d)\n", WSAGetLastError());
+			continue;
+		}
+
+		ProcessDatagram(&buf[0], bytes);
+	}
+
+	closesocket(sock);
+	return 0;
+}
+#else
 int EDIUDPSource::Main() {
 	int sock = socket(AF_INET, SOCK_DGRAM, 0);
 	if(sock == -1) {
@@ -154,38 +274,43 @@ int EDIUDPSource::Main() {
 			continue;
 		}
 
-		// a datagram is either one complete "AF"-prefixed AF packet, or a "PF"-prefixed
-		// PFT fragment (ETSI TS 102 821 Annex B) that needs reassembling across datagrams
-		if(bytes >= 2 && buf[0] == 'P' && buf[1] == 'F') {
-			PFTFragment frag;
-			if(!PFTFragment::Parse(&buf[0], bytes, frag)) {
-				fprintf(stderr, "EDIUDPSource: ignored malformed PFT fragment\n");
-				continue;
-			}
-
-			std::vector<uint8_t> af_packet;
-			if(pft.PushFragment(frag, af_packet)) {
-				ensemble_frames_count++;
-				observer->EnsembleProcessFrame(&af_packet[0]);
-			}
-			continue;
-		}
-
-		if(bytes < 10 || !(buf[0] == 'A' && buf[1] == 'F')) {
-			fprintf(stderr, "EDIUDPSource: ignored %zd byte datagram without AF/PF sync\n", bytes);
-			continue;
-		}
-
-		size_t len = buf[2] << 24 | buf[3] << 16 | buf[4] << 8 | buf[5];
-		if(10 + len + 2 != (size_t) bytes) {
-			fprintf(stderr, "EDIUDPSource: ignored AF packet with unexpected size (expected %zu, got %zd bytes)\n", 10 + len + 2, bytes);
-			continue;
-		}
-
-		ensemble_frames_count++;
-		observer->EnsembleProcessFrame(&buf[0]);
+		ProcessDatagram(&buf[0], bytes);
 	}
 
 	close(sock);
 	return 0;
+}
+#endif
+
+void EDIUDPSource::ProcessDatagram(const uint8_t *buf, size_t bytes) {
+	// a datagram is either one complete "AF"-prefixed AF packet, or a "PF"-prefixed
+	// PFT fragment (ETSI TS 102 821 Annex B) that needs reassembling across datagrams
+	if(bytes >= 2 && buf[0] == 'P' && buf[1] == 'F') {
+		PFTFragment frag;
+		if(!PFTFragment::Parse(buf, bytes, frag)) {
+			fprintf(stderr, "EDIUDPSource: ignored malformed PFT fragment\n");
+			return;
+		}
+
+		std::vector<uint8_t> af_packet;
+		if(pft.PushFragment(frag, af_packet)) {
+			ensemble_frames_count++;
+			observer->EnsembleProcessFrame(&af_packet[0]);
+		}
+		return;
+	}
+
+	if(bytes < 10 || !(buf[0] == 'A' && buf[1] == 'F')) {
+		fprintf(stderr, "EDIUDPSource: ignored %zu byte datagram without AF/PF sync\n", bytes);
+		return;
+	}
+
+	size_t len = buf[2] << 24 | buf[3] << 16 | buf[4] << 8 | buf[5];
+	if(10 + len + 2 != bytes) {
+		fprintf(stderr, "EDIUDPSource: ignored AF packet with unexpected size (expected %zu, got %zu bytes)\n", 10 + len + 2, bytes);
+		return;
+	}
+
+	ensemble_frames_count++;
+	observer->EnsembleProcessFrame(buf);
 }

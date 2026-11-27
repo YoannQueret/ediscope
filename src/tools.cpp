@@ -23,6 +23,25 @@
 #include <set>
 #include <utility>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+
+#ifdef _WIN32
+// --- FileTools -----------------------------------------------------------------
+FILE* FileTools::OpenUTF8(const std::string& path, const char *mode) {
+	auto widen = [](const std::string& s) {
+		int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+		std::wstring result(len > 0 ? len : 0, L'\0');
+		if(len > 0)
+			MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &result[0], len);
+		return result;
+	};
+	return _wfopen(widen(path).c_str(), widen(mode).c_str());
+}
+#endif
+
 
 // --- StringTools -----------------------------------------------------------------
 string_vector_t StringTools::SplitString(const std::string &s, const char delimiter) {
@@ -122,6 +141,14 @@ std::string StringTools::FilePathFromArg(const std::string &arg) {
 	// very next character already
 	size_t path_start = arg.find('/', prefix.size());
 	std::string path = path_start != std::string::npos ? arg.substr(path_start) : arg.substr(prefix.size());
+#ifdef _WIN32
+	// Windows: "file:///C:/dir/file" (the usual form) gives "/C:/dir/file", "file://C:/dir/file" a
+	// drive letter where the authority is expected - both are meant as "C:/dir/file"
+	if(arg.size() > prefix.size() + 1 && isalpha((unsigned char) arg[prefix.size()]) && arg[prefix.size() + 1] == ':')
+		path = arg.substr(prefix.size());
+	else if(path.size() > 2 && path[0] == '/' && isalpha((unsigned char) path[1]) && path[2] == ':')
+		path = path.substr(1);
+#endif
 
 	// percent-decode (e.g. "%20" -> ' '), as produced by file managers/browsers for paths
 	// containing spaces or other special characters
