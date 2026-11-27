@@ -44,6 +44,9 @@
 
 static const int LOGO_THUMB_SIZE = 96;
 static const int ROLE_FULL_IMAGE = Qt::UserRole;
+static const int ROLE_FILE_DATA = Qt::UserRole + 1;	// the logo file as fetched, for "Save logo as..."
+static const int ROLE_FILE_URL = Qt::UserRole + 2;
+static const int ROLE_FILE_MIME = Qt::UserRole + 3;
 static const int ROLE_SORT = Qt::UserRole + 1;
 
 // a table item sorted by a numeric key (ROLE_SORT) instead of its text - e.g. "128 kBit/s"
@@ -264,6 +267,18 @@ EDIScopeQtRDNSWindow::EDIScopeQtRDNSWindow(QWidget *parent) : QWidget(nullptr, Q
 	popup = new EDIScopeQtImagePopup(this);
 	popup->hide();
 
+	// right-click on a logo (see CreateLogoList): save it as fetched, or copy it
+	for(QListWidget *list : {logos_list, info_provider_logos}) {
+		connect(list, &QWidget::customContextMenuRequested, this, [this, list](const QPoint& pos) {
+			QListWidgetItem *item = list->itemAt(pos);
+			if(!item || item->data(ROLE_FILE_DATA).toByteArray().isEmpty())
+				return;
+			popup->hide();
+			EDIScopeQtTheme::ShowImageFileMenu(this, list->viewport()->mapToGlobal(pos), item->data(ROLE_FILE_DATA).toByteArray(),
+					item->data(ROLE_FULL_IMAGE).value<QImage>(), item->data(ROLE_FILE_URL).toString(), item->data(ROLE_FILE_MIME).toString(), "logo");
+		});
+	}
+
 	Clear();
 }
 
@@ -285,6 +300,8 @@ QListWidget* EDIScopeQtRDNSWindow::CreateLogoList(QWidget *parent) {
 	list->setObjectName("logoList");
 	list->setMouseTracking(true);
 	list->viewport()->setMouseTracking(true);
+	// right-click on a logo: save it as fetched, or copy it - see the connection in the constructor
+	list->setContextMenuPolicy(Qt::CustomContextMenu);
 	return list;
 }
 
@@ -311,6 +328,9 @@ void EDIScopeQtRDNSWindow::FillLogoList(QListWidget *list, const std::vector<RDN
 		if(!image.isNull()) {
 			item->setIcon(QIcon(QPixmap::fromImage(image.scaled(LOGO_THUMB_SIZE, LOGO_THUMB_SIZE, Qt::KeepAspectRatio, Qt::SmoothTransformation))));
 			item->setData(ROLE_FULL_IMAGE, image);
+			item->setData(ROLE_FILE_DATA, QByteArray((const char*) logo.data.data(), (int) logo.data.size()));
+			item->setData(ROLE_FILE_URL, QString::fromStdString(logo.url));
+			item->setData(ROLE_FILE_MIME, QString::fromStdString(logo.mime));
 		} else {
 			// not fetched, or not decodable
 			item->setIcon(style()->standardIcon(QStyle::SP_MessageBoxWarning));

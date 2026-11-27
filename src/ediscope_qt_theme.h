@@ -99,6 +99,13 @@ namespace EDIScopeQtTheme {
 	// centres a (tool) window on the main window, kept within the screen's available area (and
 	// shrunk to it, if larger) - so it opens in view even on a small screen
 	void CenterOnWindow(QWidget *window, QWidget *main_window);
+
+	// right-click menu of an image file shown in a window (e.g. a logo), as the slideshow's: "Save
+	// <what> as..." writes the exact, original file (not re-encoded), "Copy" the image to the
+	// clipboard. suggested_name: the file's own name (or URL), completed with an extension from
+	// its MIME type if it has none
+	void ShowImageFileMenu(QWidget *parent, const QPoint& global_pos, const QByteArray& data, const QImage& image,
+			const QString& suggested_name, const QString& mime, const QString& what);
 }
 
 

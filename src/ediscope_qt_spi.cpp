@@ -361,6 +361,15 @@ QWidget* EDIScopeQtSPIWindow::BuildLogos(const std::vector<SPI_LOGO>& logos, con
 			image_label->setPixmap(QPixmap::fromImage(thumb));
 			// shown at its real, undownscaled size on hover
 			logo_box->setProperty(PROPERTY_FULL_IMAGE, image);
+			// right-click: save the logo file as received, or copy it
+			QByteArray file_data((const char*) data_it->second.data(), (int) data_size);
+			QString file_name = QString::fromStdString(logo.content_name);
+			QString mime = QString::fromStdString(logo.mime);
+			logo_box->setContextMenuPolicy(Qt::CustomContextMenu);
+			connect(logo_box, &QWidget::customContextMenuRequested, this, [this, logo_box, file_data, image, file_name, mime](const QPoint& pos) {
+				popup->hide();
+				EDIScopeQtTheme::ShowImageFileMenu(this, logo_box->mapToGlobal(pos), file_data, image, file_name, mime, "logo");
+			});
 			logo_box->installEventFilter(this);
 			logo_box->setMouseTracking(true);	// so the popup follows the pointer
 			image_label->setMouseTracking(true);

@@ -34,6 +34,9 @@
 #include <QStandardPaths>
 #include <QHBoxLayout>
 #include <QPalette>
+#include <QFile>
+#include <QFileDialog>
+#include <QMessageBox>
 #include <QScreen>
 #include <QStyleFactory>
 
@@ -272,6 +275,30 @@ QLabel[role="error"] { color: @error@; }
 		int x = std::max(available.left(), std::min(rect.left(), available.right() - size.width() - frame_margin / 2));
 		int y = std::max(available.top(), std::min(rect.top(), available.bottom() - size.height() - frame_margin));
 		window->move(x, y);
+	}
+
+	void ShowImageFileMenu(QWidget *parent, const QPoint& global_pos, const QByteArray& data, const QImage& image,
+			const QString& suggested_name, const QString& mime, const QString& what) {
+		// the last part of a path or URL, without a query
+		QString name = suggested_name.section('?', 0, 0).section('/', -1);
+		if(!name.contains('.')) {
+			QString extension = mime.contains("png") ? ".png" : mime.contains("jpeg") || mime.contains("jpg") ? ".jpg" :
+					mime.contains("gif") ? ".gif" : mime.contains("svg") ? ".svg" : QString();
+			name = (name.isEmpty() ? what : name) + extension;
+		}
+
+		QString title = "Save " + what + " as...";
+		QMenu menu(parent);
+		menu.addAction(title, parent, [parent, data, name, title, what]() {
+			QString filename = QFileDialog::getSaveFileName(parent, title, name);
+			if(filename.isEmpty())
+				return;
+			QFile file(filename);
+			if(!file.open(QIODevice::WriteOnly) || file.write(data) != data.size())
+				QMessageBox::critical(parent, "EDIScope", "Could not save the " + what + ":\n" + file.errorString());
+		});
+		menu.addAction("Copy", parent, [image]() {QApplication::clipboard()->setImage(image);});
+		menu.exec(global_pos);
 	}
 
 	void MakeTableCopyable(QTableWidget *table) {
