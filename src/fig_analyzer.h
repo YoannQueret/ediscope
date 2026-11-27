@@ -65,6 +65,18 @@ struct FIGGapStats {
 	double AvgGap() const {return count > 1 ? sum_gap_ms / (count - 1) : 0;}
 };
 
+// distribution of the intervals between repetitions, in classes relative to the nominal interval:
+// <= 1x (nominal), <= 1.5x, <= 2x, <= 3x (the minimum rate allowed), <= 5x, <= 10x, > 10x
+struct FIGHistogram {
+	static const int classes = 7;
+	static const double limits[classes - 1];	// upper limit of each class, in multiples of the nominal interval
+	uint64_t counts[classes] = {};
+
+	void Add(double gap_ms, double nominal_ms);
+	void Merge(const FIGHistogram& other);
+	uint64_t Total() const;
+};
+
 // --- snapshot, as shown by the UI -----------------------------------------------------------------
 struct FIG_ANALYSIS_ENTITY {
 	std::string name;
@@ -74,6 +86,7 @@ struct FIG_ANALYSIS_ENTITY {
 	double avg_gap_ms;
 	double max_gap_ms;		// largest interval, including the current one (since_last_ms)
 	FIGVerdict verdict;
+	FIGHistogram histogram;	// of the completed intervals (not the current one)
 };
 
 struct FIG_ANALYSIS_CHECK {
@@ -86,6 +99,7 @@ struct FIG_ANALYSIS_CHECK {
 	FIGVerdict verdict;			// worst over all entities
 	bool burst;					// verdicts come from the events (CEI, announcements) instead of entities
 	int events;					// number of events, for a burst check
+	FIGHistogram histogram;		// all entities (or events) together
 };
 
 struct FIG_ANALYSIS_FIG {
@@ -111,6 +125,8 @@ struct FIG_ANALYSIS_EVENT {
 	bool complete;				// its window is over (else still collecting)
 	FIGVerdict verdict;
 	std::string note;
+	double nominal_ms;			// nominal interval during the burst
+	FIGHistogram histogram;
 };
 
 struct FIG_ANALYSIS_SNAPSHOT {
@@ -134,6 +150,7 @@ private:
 	struct Entity {
 		std::string name;
 		FIGGapStats gaps;
+		FIGHistogram histogram;
 	};
 
 	struct Check {
@@ -166,6 +183,7 @@ private:
 		double nominal_ms;
 		double window_ms;
 		FIGGapStats gaps;
+		FIGHistogram histogram;
 		bool complete;
 		std::string note;
 	};
@@ -199,6 +217,7 @@ private:
 	void CEI(const std::string& check_id, uint64_t key, const std::string& name);
 	void Announcement(const std::string& fig, uint64_t key, const std::string& name, uint16_t asw);
 	Event& OpenEvent(const std::string& check_id, const std::string& entity, const std::string& event, double window_ms, double nominal_ms);
+	void AddToEvent(Event& event);
 	void CloseExpiredEvents();
 
 	void ProcessFIB(const uint8_t *fib);

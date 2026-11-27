@@ -19,6 +19,7 @@
 #include "ediscope_qt_meters.h"
 
 #include "audio_spectrum_analyzer.h"
+#include "ediscope_qt_theme.h"
 
 #include <algorithm>
 #include <cmath>
@@ -33,10 +34,6 @@
 
 // shared by every meter, for a consistent look across the meters row - no background of their own:
 // they are drawn straight onto their panel
-static const QColor meter_border("#4d4d4d");
-static const QColor meter_tick("#666666");
-static const QColor meter_label("#999999");
-static const QColor bar_bg("#262626");
 static const int TOP_MARGIN = 16;
 static const int BOTTOM_MARGIN = 16;
 static const std::chrono::seconds PEAK_HOLD_DURATION{2};
@@ -132,12 +129,12 @@ void EDIScopeQtLevelMeter::paintEvent(QPaintEvent* /*event*/) {
 	QFontMetricsF metrics(small_font);
 	for(double tick : ticks) {
 		double y = y_from_top(tick);
-		painter.setPen(meter_tick);
+		painter.setPen(EDIScopeQtTheme::meter_tick);
 		painter.drawLine(QPointF(LEVEL_SCALE_WIDTH - 4, y), QPointF(LEVEL_SCALE_WIDTH, y));
 
 		QString label = QString::number((int) tick);
 		double label_height = metrics.height();
-		painter.setPen(meter_label);
+		painter.setPen(EDIScopeQtTheme::meter_label);
 		painter.drawText(QRectF(0, y - label_height / 2, LEVEL_SCALE_WIDTH - 6, label_height), Qt::AlignRight | Qt::AlignVCenter, label);
 	}
 
@@ -150,7 +147,7 @@ void EDIScopeQtLevelMeter::paintEvent(QPaintEvent* /*event*/) {
 		double bottom = TOP_MARGIN + height;
 
 		// background represents the unfilled part of the bar
-		painter.fillRect(QRectF(x, TOP_MARGIN, bar_width, height), bar_bg);
+		painter.fillRect(QRectF(x, TOP_MARGIN, bar_width, height), EDIScopeQtTheme::meter_track);
 
 		// colour zones (broadcast VU meter convention), revealed up to the current level
 		painter.save();
@@ -162,9 +159,9 @@ void EDIScopeQtLevelMeter::paintEvent(QPaintEvent* /*event*/) {
 
 		// peak-hold marker: highest level reached in the last 2 seconds
 		double peak_y = bottom - px_from_bottom(peak_dbfs[ch]);
-		painter.fillRect(QRectF(x, std::max(peak_y - 1, (double) TOP_MARGIN), bar_width, 2), Qt::white);
+		painter.fillRect(QRectF(x, std::max(peak_y - 1, (double) TOP_MARGIN), bar_width, 2), EDIScopeQtTheme::meter_peak);
 
-		painter.setPen(meter_border);
+		painter.setPen(EDIScopeQtTheme::meter_border);
 		painter.setBrush(Qt::NoBrush);
 		painter.drawRect(QRectF(x + 0.5, TOP_MARGIN + 0.5, bar_width - 1, height - 1));
 	}
@@ -214,14 +211,14 @@ void EDIScopeQtStereoMeter::paintEvent(QPaintEvent* /*event*/) {
 	const double scale = size / 2.0 / STEREO_PLOT_RANGE;
 
 	// corner-to-corner dashed diagonals
-	QPen dash_pen(QColor("#595959"), 1, Qt::DashLine);
+	QPen dash_pen(EDIScopeQtTheme::meter_diagonal, 1, Qt::DashLine);
 	painter.setPen(dash_pen);
 	painter.drawLine(QPointF(0, 0), QPointF(size, size));
 	painter.drawLine(QPointF(size, 0), QPointF(0, size));
 
 	QFont small_font = SmallFont(this, 0.8);
 	painter.setFont(small_font);
-	painter.setPen(meter_label);
+	painter.setPen(EDIScopeQtTheme::meter_label);
 	auto draw_label = [&](const char *text, double x, double y) {
 		painter.drawText(QRectF(x - 10, y - 8, 20, 16), Qt::AlignCenter, text);
 	};
@@ -238,7 +235,9 @@ void EDIScopeQtStereoMeter::paintEvent(QPaintEvent* /*event*/) {
 		double px = cx + points[i].first * scale;
 		double py = cy - points[i].second * scale;
 
-		painter.setBrush(QColor::fromRgbF(1.0, 0.9, 0.2, alpha));
+		QColor point = EDIScopeQtTheme::meter_points;
+		point.setAlphaF(alpha);
+		painter.setBrush(point);
 		painter.drawEllipse(QPointF(px, py), 1.3, 1.3);
 	}
 	painter.setRenderHint(QPainter::Antialiasing, false);
@@ -295,10 +294,10 @@ void EDIScopeQtCorrelationMeter::paintEvent(QPaintEvent* /*event*/) {
 	for(const Tick& tick : ticks) {
 		double y = y_for(tick.corr);
 
-		painter.setPen(meter_tick);
+		painter.setPen(EDIScopeQtTheme::meter_tick);
 		painter.drawLine(QPointF(bar_x, y), QPointF(bar_x + bar_width, y));
 
-		painter.setPen(meter_label);
+		painter.setPen(EDIScopeQtTheme::meter_label);
 		painter.drawText(QRectF(0, y - label_height / 2, bar_x - 3, label_height), Qt::AlignRight | Qt::AlignVCenter, tick.label);
 
 		// equivalent phase angle: 0deg at +1 (in phase), 90deg at 0 (uncorrelated), 180deg at -1 (out of phase)
@@ -319,7 +318,7 @@ void EDIScopeQtCorrelationMeter::paintEvent(QPaintEvent* /*event*/) {
 		painter.fillRect(QRectF(bar_x + 1, y - 1.5, bar_width - 2, 3), color);
 	}
 
-	painter.setPen(meter_border);
+	painter.setPen(EDIScopeQtTheme::meter_border);
 	painter.setBrush(Qt::NoBrush);
 	painter.drawRect(QRectF(bar_x + 0.5, scale_y + 0.5, bar_width - 1, scale_height - 1));
 }
@@ -440,7 +439,7 @@ void EDIScopeQtSpectrum::DrawAmplitudeScale(QPainter& painter, double baseline_y
 		double offset = height * LevelToFraction(tick);
 		double y = grow_upward ? baseline_y - offset : baseline_y + offset;
 
-		painter.setPen(meter_tick);
+		painter.setPen(EDIScopeQtTheme::meter_tick);
 		painter.drawLine(QPointF(SPECTRUM_SCALE_WIDTH - 4, y), QPointF(SPECTRUM_SCALE_WIDTH, y));
 
 		// keep the label within this half's own extent, widened by the outer margins
@@ -448,7 +447,7 @@ void EDIScopeQtSpectrum::DrawAmplitudeScale(QPainter& painter, double baseline_y
 		double extent_bottom = (grow_upward ? baseline_y : baseline_y + height) + margin_after;
 		double label_y = std::min(std::max(y - label_height / 2.0, extent_top), extent_bottom - label_height);
 
-		painter.setPen(meter_label);
+		painter.setPen(EDIScopeQtTheme::meter_label);
 		painter.drawText(QRectF(0, label_y, SPECTRUM_SCALE_WIDTH - 6, label_height), Qt::AlignRight | Qt::AlignVCenter, QString::number((int) tick));
 	}
 }
@@ -466,7 +465,7 @@ void EDIScopeQtSpectrum::DrawFrequencyScale(QPainter& painter, double x, double 
 	for(const Tick& tick : ticks) {
 		double tick_x = x + FreqToFraction(tick.freq) * width;
 
-		painter.setPen(meter_tick);
+		painter.setPen(EDIScopeQtTheme::meter_tick);
 		painter.drawLine(QPointF(tick_x, y), QPointF(tick_x, y + (tick.label ? 4 : 2)));
 
 		if(!tick.label)
@@ -481,7 +480,7 @@ void EDIScopeQtSpectrum::DrawFrequencyScale(QPainter& painter, double x, double 
 		else if(tick.freq >= AudioSpectrumAnalyzer::max_freq)
 			label_x = tick_x - label_width;
 
-		painter.setPen(meter_label);
+		painter.setPen(EDIScopeQtTheme::meter_label);
 		painter.drawText(QPointF(label_x, y + 4 + metrics.ascent()), tick.label);
 	}
 }
@@ -515,7 +514,7 @@ void EDIScopeQtSpectrum::DrawChannelBubble(QPainter& painter, size_t ch, double 
 	peak.moveTo(band_x(0), y_for(peak_db[ch][0]));
 	for(size_t b = 1; b < num_bands; b++)
 		peak.lineTo(band_x(b), y_for(peak_db[ch][b]));
-	painter.strokePath(peak, QPen(Qt::white, 0.8));
+	painter.strokePath(peak, QPen(EDIScopeQtTheme::meter_peak, 0.8));
 
 	painter.setRenderHint(QPainter::Antialiasing, false);
 }
@@ -558,14 +557,14 @@ void EDIScopeQtSpectrum::DrawChannelBar(QPainter& painter, size_t ch, double x, 
 		double peak_y = y_for(peak);
 
 		// background represents the unfilled part of the bar
-		painter.fillRect(QRectF(bar_x, area_top, bar_width, height), bar_bg);
+		painter.fillRect(QRectF(bar_x, area_top, bar_width, height), EDIScopeQtTheme::meter_track);
 
 		// filled part
 		QRectF fill = grow_upward ? QRectF(bar_x, value_y, bar_width, baseline_y - value_y) : QRectF(bar_x, baseline_y, bar_width, value_y - baseline_y);
 		painter.fillRect(fill, gradient);
 
 		// peak-hold cap: a short, bright segment at the 2 second peak level
-		painter.fillRect(QRectF(bar_x, peak_y - (grow_upward ? 1.5 : 0.0), bar_width, 1.5), QColor::fromRgbF(1.0, 0.95, 0.4));
+		painter.fillRect(QRectF(bar_x, peak_y - (grow_upward ? 1.5 : 0.0), bar_width, 1.5), EDIScopeQtTheme::meter_cap);
 	}
 }
 
@@ -598,14 +597,14 @@ void EDIScopeQtSpectrum::paintEvent(QPaintEvent* /*event*/) {
 		draw_channel(1, half, half, false);
 
 		// center axis, shared floor of both mirrored channels
-		painter.setPen(meter_border);
+		painter.setPen(EDIScopeQtTheme::meter_border);
 		painter.drawLine(QPointF(plot_x, half + 0.5), QPointF(plot_x + plot_width, half + 0.5));
 
 		// channel labels, so it's clear which mirrored half is which: "L" top-right, "R" bottom-right
 		QFont label_font = font();
 		label_font.setBold(true);
 		painter.setFont(label_font);
-		painter.setPen(QColor("#b3b3b3"));
+		painter.setPen(EDIScopeQtTheme::meter_channel);
 		QFontMetricsF label_metrics(label_font);
 		painter.drawText(QRectF(plot_x, 2, plot_width - 4, label_metrics.height()), Qt::AlignRight | Qt::AlignTop, "L");
 		painter.drawText(QRectF(plot_x, plot_height - label_metrics.height() - 2, plot_width - 4, label_metrics.height()), Qt::AlignRight | Qt::AlignBottom, "R");

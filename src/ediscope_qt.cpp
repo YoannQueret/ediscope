@@ -463,10 +463,9 @@ void EDIScopeQt::InitWidgets() {
 	});
 	label_cu_usage = new QLabel(cu_box);
 	label_cu_usage->setFont(EDIScopeQtTheme::MonoFont());
-	label_cu_usage->setStyleSheet("color: #9aa3ad;");
+	EDIScopeQtTheme::SetRole(label_cu_usage, "muted");
 	cu_layout->addWidget(cu_bar);
 	cu_layout->addWidget(label_cu_usage);
-	cu_box->setStyleSheet("QWidget#cuBox { border-top: 1px solid #262b32; }");
 	cu_box->setObjectName("cuBox");
 	cu_box->setAttribute(Qt::WA_StyledBackground);
 	panel_services->BodyLayout()->addWidget(cu_box);
@@ -1007,7 +1006,7 @@ void EDIScopeQt::UpdateConnectionStatus() {
 
 	unsigned int fibs = discarded_fibs;
 	status_fib->setText(QString("FIB CRC errors: %1").arg(fibs));
-	status_fib->setStyleSheet(fibs ? "color: #fbbf24;" : "");
+	EDIScopeQtTheme::SetRole(status_fib, fibs ? "warning" : "");
 }
 
 
@@ -1049,6 +1048,9 @@ void EDIScopeQt::StartSource(EnsembleSource *source, const QString& uri) {
 	last_frame_ms = 0;
 	discarded_fibs = 0;
 	first_frame_received = false;
+	// the FIG analysis only starts with its window - right away, if it is already open
+	if(fig_window->isVisible())
+		StartFIGAnalysis();
 	ensemble_source_thread = std::thread(&EnsembleSource::Main, ensemble_source);
 	UpdateConnectionStatus();
 	UpdateRecordingUI();
@@ -1075,6 +1077,8 @@ void EDIScopeQt::StopEnsembleSource() {
 	// thread are dropped (see PostFromEngine)
 	ensemble_player->Flush();
 	fic_decoder->Reset();
+	// a new source starts without analysis (see StartSource)
+	fig_analysis_running = false;
 	fig_analyzer.Reset();
 	engine_generation++;
 
@@ -1411,7 +1415,7 @@ void EDIScopeQt::ShowRecordingSummary(const QString& filename, long int duration
 	QFileInfo info(filename);
 	QString rows;
 	auto add_row = [&](const QString& name, const QString& value) {
-		rows += "<tr><td style=\"color: #9aa3ad; padding-right: 14px;\">" + name + "</td><td>" + value + "</td></tr>";
+		rows += "<tr><td style=\"color: " + EDIScopeQtTheme::text_muted.name() + "; padding-right: 14px;\">" + name + "</td><td>" + value + "</td></tr>";
 	};
 	add_row("File", info.fileName().toHtmlEscaped());
 	add_row("Folder", info.absolutePath().toHtmlEscaped());
@@ -1458,7 +1462,7 @@ void EDIScopeQt::UpdateEnsembleRecordingStatus() {
 	if(recording != REC_ENSEMBLE)
 		return;
 	label_record->setText(QString::fromStdString(StringTools::MsToTimecode((long int) mux_rec_frames * 24)));
-	label_record->setStyleSheet("color: #f87171;");
+	EDIScopeQtTheme::SetRole(label_record, "error");
 	label_record->setToolTip("File name: \"" + QString::fromStdString(mux_rec_filename) + "\"");
 }
 
@@ -1469,9 +1473,23 @@ void EDIScopeQt::ShowSettings() {
 	QVBoxLayout *layout = new QVBoxLayout(&dialog);
 	layout->setSpacing(12);
 
+	// theme
+	QLabel *theme_title = new QLabel("Theme", &dialog);
+	theme_title->setStyleSheet("font-weight: 600;");
+	layout->addWidget(theme_title);
+	QComboBox *theme_combo = new QComboBox(&dialog);
+	theme_combo->addItem("Dark", EDIScopeQtTheme::ThemeName(EDIScopeQtTheme::Theme::DARK));
+	theme_combo->addItem("Light", EDIScopeQtTheme::ThemeName(EDIScopeQtTheme::Theme::LIGHT));
+	theme_combo->setCurrentIndex(EDIScopeQtTheme::Current() == EDIScopeQtTheme::Theme::LIGHT ? 1 : 0);
+	theme_combo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+	QHBoxLayout *theme_layout = new QHBoxLayout();
+	theme_layout->addWidget(theme_combo);
+	theme_layout->addStretch(1);
+	layout->addLayout(theme_layout);
+
 	// recordings folder
 	QLabel *folder_title = new QLabel("Recordings folder", &dialog);
-	folder_title->setStyleSheet("font-weight: 600;");
+	folder_title->setStyleSheet("font-weight: 600; margin-top: 6px;");
 	layout->addWidget(folder_title);
 	QHBoxLayout *folder_layout = new QHBoxLayout();
 	QLineEdit *folder_edit = new QLineEdit(QString::fromStdString(options.recordings_path), &dialog);
@@ -1488,7 +1506,7 @@ void EDIScopeQt::ShowSettings() {
 	if(options.recordings_path_given) {
 		QLabel *note = new QLabel("Given with -r on the command line for this run - a folder chosen here is saved for the next runs.", &dialog);
 		note->setWordWrap(true);
-		note->setStyleSheet("color: #9aa3ad;");
+		EDIScopeQtTheme::SetRole(note, "muted");
 		layout->addWidget(note);
 	}
 
@@ -1538,6 +1556,27 @@ void EDIScopeQt::ShowSettings() {
 			shortcuts << b.first;
 	settings.setValue("toolbar/shortcuts", shortcuts);
 	ApplyToolbarShortcuts();
+
+	EDIScopeQtTheme::Theme theme = EDIScopeQtTheme::ThemeFromName(theme_combo->currentData().toString());
+	settings.setValue("appearance/theme", EDIScopeQtTheme::ThemeName(theme));
+	if(theme != EDIScopeQtTheme::Current())
+		ApplyTheme(theme);
+}
+
+void EDIScopeQt::ApplyTheme(EDIScopeQtTheme::Theme theme) {
+	EDIScopeQtTheme::Apply(*qApp, theme);
+
+	// what isn't coloured by the style sheet itself, nor read from the theme when painted:
+	// texts and table cells given a colour when they were filled
+	services_model->RefreshAll();
+	UpdateConnectionStatus();
+	UpdateEnsembleDisplay();
+	LISTED_SERVICE service;
+	GetSelectedService(service);
+	UpdateAnnouncementSupport(service);
+	dl_plus->Refresh();
+	rdns_window->ApplyTheme();
+	fig_window->ApplyTheme();
 }
 
 QStringList EDIScopeQt::ToolbarShortcuts() {
@@ -1561,8 +1600,15 @@ void EDIScopeQt::OnFIGToggled(bool checked) {
 		return;
 	}
 	fig_window->AlignToParent();
+	if(!fig_analysis_running)
+		StartFIGAnalysis();
 	fig_window->show();
 	fig_window->raise();
+}
+
+void EDIScopeQt::StartFIGAnalysis() {
+	fig_analyzer.Reset();
+	fig_analysis_running = true;
 }
 
 
@@ -1610,12 +1656,12 @@ void EDIScopeQt::UpdateRecStatus(bool decoding) {
 	// if recording in progress
 	if(rec_file) {
 		label_record->setText(QString::fromStdString(StringTools::MsToTimecode(rec_duration_ms)));
-		label_record->setStyleSheet("color: #f87171;");
+		EDIScopeQtTheme::SetRole(label_record, "error");
 		label_record->setToolTip("File name: \"" + QString::fromStdString(rec_filename) + "\"");
 	} else if(options.rec_prebuffer_size_s > 0 && decoding) {
 		// prebuffer enabled and currently decoding
 		label_record->setText(QString::fromStdString(StringTools::MsToTimecode(rec_prebuffer_filled_ms)));
-		label_record->setStyleSheet("color: #9aa3ad;");
+		EDIScopeQtTheme::SetRole(label_record, "muted");
 		label_record->setToolTip("Prebuffer: " + QString::fromStdString(StringTools::MsToTimecode(options.rec_prebuffer_size_s * 1000)));
 	} else {
 		label_record->clear();

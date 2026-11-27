@@ -58,7 +58,7 @@ static QLabel* CreateMessage(const QString& text, QWidget *parent) {
 	label->setWordWrap(true);
 	label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
 	label->setContentsMargins(4, 14, 4, 4);
-	label->setStyleSheet("color: #9aa3ad; font-size: 13px;");
+	EDIScopeQtTheme::SetRole(label, "message");
 	return label;
 }
 
@@ -81,7 +81,7 @@ static QString IndentXML(const QString& xml) {
 static QLabel* CreateTitle(QWidget *parent) {
 	QLabel *label = new QLabel(parent);
 	label->setWordWrap(true);
-	label->setStyleSheet("font-weight: 700; font-size: 14px; color: #f3f5f7;");
+	EDIScopeQtTheme::SetRole(label, "title");
 	return label;
 }
 
@@ -151,7 +151,7 @@ EDIScopeQtRDNSWindow::EDIScopeQtRDNSWindow(QWidget *parent) : QWidget(parent, Qt
 	static const char *stage_titles[] = {"FQDN:", "GCC:", "DNS CNAME:", "DNS SRV (_radioepg._tcp):", "HTTP (SI.xml):"};
 	for(int i = 0; i < 5; i++) {
 		QLabel *title = new QLabel(stage_titles[i], detail);
-		title->setStyleSheet("font-weight: 600; color: #9aa3ad;");
+		EDIScopeQtTheme::SetRole(title, "caption");
 		title->setAlignment(Qt::AlignLeft | Qt::AlignTop);
 		grid->addWidget(title, i, 0);
 
@@ -257,7 +257,7 @@ EDIScopeQtRDNSWindow::EDIScopeQtRDNSWindow(QWidget *parent) : QWidget(parent, Qt
 	xml_view->setReadOnly(true);
 	xml_view->setFont(EDIScopeQtTheme::MonoFont());
 	xml_view->setLineWrapMode(QPlainTextEdit::NoWrap);
-	xml_view->setStyleSheet("QPlainTextEdit { background: #12151a; border: none; }");
+	xml_view->setObjectName("xmlView");
 	result_tabs->addTab(xml_view, "SI.xml");
 
 	popup = new EDIScopeQtImagePopup(this);
@@ -281,7 +281,7 @@ QListWidget* EDIScopeQtRDNSWindow::CreateLogoList(QWidget *parent) {
 	list->setFocusPolicy(Qt::NoFocus);
 	list->setWordWrap(true);
 	list->setFrameShape(QFrame::NoFrame);
-	list->setStyleSheet("QListWidget { background: transparent; } QListWidget::item { color: #9aa3ad; }");
+	list->setObjectName("logoList");
 	list->setMouseTracking(true);
 	list->viewport()->setMouseTracking(true);
 	return list;
@@ -455,10 +455,10 @@ void EDIScopeQtRDNSWindow::ShowDetailForSelection() {
 		QLabel *value = stage_values[2 + i];
 		if(!stage.attempted) {
 			value->setText("(not reached)");
-			value->setStyleSheet("color: #9aa3ad;");
+			EDIScopeQtTheme::SetRole(value, "muted");
 		} else {
 			value->setText(QString(stage.success ? "✓ " : "✗ ") + QString::fromStdString(stage.detail));
-			value->setStyleSheet(stage.success ? "color: #34d399;" : "color: #f87171;");
+			EDIScopeQtTheme::SetRole(value, stage.success ? "ok" : "error");
 		}
 	}
 
@@ -589,6 +589,11 @@ void EDIScopeQtRDNSWindow::UpdateResult(int sid, int scids, const RDNS_RESULT& r
 	int row = SelectedRow();
 	if(row >= 0 && row < (int) services.size() && services[row].sid == sid && services[row].scids == scids)
 		ShowDetailForSelection();
+}
+
+void EDIScopeQtRDNSWindow::ApplyTheme() {
+	for(int row = 0; row < (int) services.size(); row++)
+		RefreshRowStatus(row);
 }
 
 void EDIScopeQtRDNSWindow::Clear() {

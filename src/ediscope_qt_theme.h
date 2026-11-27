@@ -29,29 +29,67 @@
 
 
 // --- EDIScopeQtTheme -----------------------------------------------------------------
-// the flat dark look of the redesign mockup - every colour used by the custom-drawn widgets
-// comes from here, so the whole application stays consistent
+// the look of the whole application, dark or light: every colour - of the style sheet and of the
+// custom-drawn widgets - comes from here, so a theme change (Apply) reaches everything. Custom-drawn
+// widgets read these colours when they paint; text given a role (SetRole) is coloured by the style
+// sheet; anything else is redrawn by its owner when the theme changes
 namespace EDIScopeQtTheme {
-	extern const QColor window_bg;		// main window background
-	extern const QColor panel_bg;		// panels
-	extern const QColor bar_bg;			// menu bar, status bar
-	extern const QColor input_bg;		// inputs, buttons, empty areas inside panels
-	extern const QColor border;			// panel borders, separators
-	extern const QColor input_border;
-	extern const QColor text;
-	extern const QColor text_strong;
-	extern const QColor text_secondary;
-	extern const QColor text_muted;
-	extern const QColor text_disabled;
-	extern const QColor accent;
-	extern const QColor on_accent;		// text drawn on top of the accent colour
-	extern const QColor ok;
-	extern const QColor warning;
-	extern const QColor error;
-	extern const QColor info;
+	enum class Theme {DARK, LIGHT};
 
-	void Apply(QApplication& app);
+	// general
+	extern QColor window_bg;		// main window background
+	extern QColor panel_bg;			// panels
+	extern QColor bar_bg;			// menu bar, status bar
+	extern QColor input_bg;			// inputs, buttons, empty areas inside panels
+	extern QColor border;			// panel borders, separators
+	extern QColor input_border;
+	extern QColor text;
+	extern QColor text_strong;
+	extern QColor text_secondary;
+	extern QColor text_muted;
+	extern QColor text_disabled;
+	extern QColor accent;
+	extern QColor on_accent;		// text drawn on top of the accent colour
+	extern QColor ok;
+	extern QColor warning;
+	extern QColor error;
+	extern QColor info;
+
+	// meters
+	extern QColor meter_border;
+	extern QColor meter_tick;
+	extern QColor meter_label;
+	extern QColor meter_track;		// unfilled part of a bar
+	extern QColor meter_diagonal;	// stereo meter guides
+	extern QColor meter_peak;		// peak-hold marker
+	extern QColor meter_points;		// stereo meter cloud
+	extern QColor meter_cap;		// spectrum peak-hold caps
+	extern QColor meter_channel;	// "L"/"R" labels
+
+	// CU bar
+	extern QColor cu_audio;
+	extern QColor cu_data;
+	extern QColor cu_data_hatch;
+	extern QColor cu_outline;
+
+	// SPI programme timeline
+	extern QColor timeline_block;
+	extern QColor timeline_border;
+	extern QColor timeline_time;
+
+	extern QColor slide_waiting;	// "waiting for slide" placeholder
+
+	void Apply(QApplication& app, Theme theme);
+	Theme Current();
+	QString ThemeName(Theme theme);		// "dark", "light" - as saved in the settings
+	Theme ThemeFromName(const QString& name);
+
 	QFont MonoFont();
+
+	// colours a label (or any widget) through the style sheet, so it follows theme changes by
+	// itself: "muted", "message", "title", "caption", "subtitle", "note", "small", "ok", "warning",
+	// "error" - an empty role resets it
+	void SetRole(QWidget *widget, const char *role);
 
 	// right-click on a table: "Copy" (the cell) and "Copy row" (tab-separated)
 	void MakeTableCopyable(QTableWidget *table);

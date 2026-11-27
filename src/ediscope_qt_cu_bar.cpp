@@ -29,10 +29,6 @@
 #include <QToolTip>
 
 
-static const QColor block_audio("#2f5f86");
-static const QColor block_data("#3a4049");
-static const QColor block_data_hatch("#59616c");
-static const QColor block_outline("#0f1216");
 
 
 // --- EDIScopeQtCUBar -----------------------------------------------------------------
@@ -240,14 +236,14 @@ void EDIScopeQtCUBar::paintEvent(QPaintEvent* /*event*/) {
 		if(selected) {
 			painter.fillRect(rect, EDIScopeQtTheme::accent);
 		} else if(entry.is_audio) {
-			painter.fillRect(rect, block_audio);
+			painter.fillRect(rect, EDIScopeQtTheme::cu_audio);
 		} else {
 			// data service (e.g. EPG) - not playable: hatched
-			painter.fillRect(rect, block_data);
-			painter.fillRect(rect, QBrush(block_data_hatch, Qt::BDiagPattern));
+			painter.fillRect(rect, EDIScopeQtTheme::cu_data);
+			painter.fillRect(rect, QBrush(EDIScopeQtTheme::cu_data_hatch, Qt::BDiagPattern));
 		}
 
-		painter.setPen(QPen(block_outline, 1));
+		painter.setPen(QPen(EDIScopeQtTheme::cu_outline, 1));
 		painter.drawRect(rect);
 
 		// SubChId[/SID] (smaller font) above the CU count, clipped to the block so nothing bleeds into the next one

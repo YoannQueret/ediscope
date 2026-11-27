@@ -19,6 +19,7 @@
 #ifndef MOT_MANAGER_H_
 #define MOT_MANAGER_H_
 
+#include <chrono>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -44,6 +45,11 @@ struct MOT_FILE {
 	std::string category_title;
 	std::string click_through_url;
 	bool trigger_time_now;
+
+	// reception (MOTManager): when the first segment of this object arrived, and when the object
+	// was complete and handed over to be shown - both unset (epoch) if unknown
+	std::chrono::system_clock::time_point reception_start;
+	std::chrono::system_clock::time_point reception_end;
 
 	static const int CONTENT_TYPE_IMAGE			= 0x02;
 	static const int CONTENT_TYPE_MOT_TRANSPORT	= 0x05;
@@ -124,6 +130,7 @@ private:
 
 	MOTObject object;
 	int current_transport_id;
+	std::chrono::system_clock::time_point object_start;	// first segment of the current object
 
 	bool ParseCheckDataGroupHeader(const std::vector<uint8_t>& dg, size_t& offset, int& dg_type);
 	bool ParseCheckSessionHeader(const std::vector<uint8_t>& dg, size_t& offset, bool& last_seg, int& seg_number, int& transport_id);

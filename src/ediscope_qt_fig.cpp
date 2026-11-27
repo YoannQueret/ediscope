@@ -23,6 +23,7 @@
 #include <QDateTime>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QPainter>
 #include <QPushButton>
 #include <QSplitter>
 #include <QTabWidget>
@@ -59,6 +60,102 @@ static QString Interval(double ms) {
 }
 
 
+// --- EDIScopeQtFIGHistogram -----------------------------------------------------------------
+static const int HISTOGRAM_ROW_HEIGHT = 26;
+
+EDIScopeQtFIGHistogram::EDIScopeQtFIGHistogram(QWidget *parent) : QWidget(parent), nominal_ms(0) {
+	setMinimumSize(440, 60 + FIGHistogram::classes * HISTOGRAM_ROW_HEIGHT + 30);
+	setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+}
+
+void EDIScopeQtFIGHistogram::SetHistogram(const FIGHistogram& histogram, double nominal_ms, const QString& title) {
+	this->histogram = histogram;
+	this->nominal_ms = nominal_ms;
+	this->title = title;
+	update();
+}
+
+void EDIScopeQtFIGHistogram::Clear() {
+	histogram = FIGHistogram();
+	nominal_ms = 0;
+	title.clear();
+	update();
+}
+
+void EDIScopeQtFIGHistogram::paintEvent(QPaintEvent* /*event*/) {
+	QPainter painter(this);
+	painter.setRenderHint(QPainter::Antialiasing, true);
+
+	QFont title_font = font();
+	title_font.setBold(true);
+	QFont mono = EDIScopeQtTheme::MonoFont();
+	QFontMetricsF mono_metrics(mono);
+
+	painter.setPen(EDIScopeQtTheme::text_secondary);
+	painter.setFont(title_font);
+	painter.drawText(QRectF(0, 0, width(), 20), Qt::AlignLeft | Qt::AlignVCenter, title.isEmpty() ? "Intervals" : title);
+
+	if(nominal_ms <= 0) {
+		painter.setFont(font());
+		painter.setPen(EDIScopeQtTheme::text_muted);
+		painter.drawText(QRectF(0, 28, width(), 40), Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, "Select a requirement to see the distribution of its intervals.");
+		return;
+	}
+
+	uint64_t total = histogram.Total();
+	const double label_width = 150;
+	// wide enough for e.g. "123456  100.0 %"
+	const double value_width = QFontMetricsF(EDIScopeQtTheme::MonoFont()).horizontalAdvance("123456  100.0 %") + 4;
+	const double bar_x = label_width + 6;
+	const double bar_width = std::max(20.0, width() - bar_x - value_width - 6);
+	double y = 30;
+
+	painter.setFont(mono);
+	for(int c = 0; c < FIGHistogram::classes; c++) {
+		// zone of the class, as for the verdicts
+		FIGVerdict zone = c == 0 ? FIGVerdict::OK : (c <= 3 ? FIGVerdict::DEGRADED : FIGVerdict::FAIL);
+		QColor color = EDIScopeQtFIGWindow::VerdictColor(zone);
+		const char *mark = zone == FIGVerdict::OK ? "✓" : (zone == FIGVerdict::DEGRADED ? "~" : "✗");
+
+		QString limit;
+		if(c < FIGHistogram::classes - 1)
+			limit = QString("≤ %1× %2").arg(FIGHistogram::limits[c]).arg(QString::fromStdString(FIGAnalyzer::FormatInterval(FIGHistogram::limits[c] * nominal_ms)));
+		else
+			limit = QString("> %1× %2").arg(FIGHistogram::limits[c - 1]).arg(QString::fromStdString(FIGAnalyzer::FormatInterval(FIGHistogram::limits[c - 1] * nominal_ms)));
+
+		QRectF row(0, y, width(), HISTOGRAM_ROW_HEIGHT);
+		painter.setPen(color);
+		painter.drawText(QRectF(row.left(), row.top(), 16, row.height()), Qt::AlignLeft | Qt::AlignVCenter, mark);
+		painter.setPen(EDIScopeQtTheme::text_secondary);
+		painter.drawText(QRectF(row.left() + 16, row.top(), label_width - 16, row.height()), Qt::AlignLeft | Qt::AlignVCenter, limit);
+
+		// bar track, and the bar proportional to the share of all intervals (at least visible if not empty)
+		QRectF track(bar_x, row.top() + 6, bar_width, row.height() - 12);
+		painter.setPen(Qt::NoPen);
+		painter.setBrush(EDIScopeQtTheme::input_bg);
+		painter.drawRoundedRect(track, 3, 3);
+		uint64_t count = histogram.counts[c];
+		if(count) {
+			double share = (double) count / total;
+			QRectF bar(track.left(), track.top(), std::max(3.0, track.width() * share), track.height());
+			painter.setBrush(color);
+			painter.drawRoundedRect(bar, 3, 3);
+		}
+
+		painter.setPen(count ? EDIScopeQtTheme::text : EDIScopeQtTheme::text_disabled);
+		QString value = count ? QString("%1  %2 %").arg(count).arg(100.0 * count / total, 0, 'f', count * 1000 < total ? 2 : 1) : QString("0");
+		painter.drawText(QRectF(bar_x + bar_width + 6, row.top(), value_width, row.height()), Qt::AlignRight | Qt::AlignVCenter, value);
+
+		y += HISTOGRAM_ROW_HEIGHT;
+	}
+
+	painter.setFont(font());
+	painter.setPen(EDIScopeQtTheme::text_muted);
+	painter.drawText(QRectF(0, y + 4, width(), 40), Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
+			QString("%1 interval(s) between repetitions; the current one (since the last repetition) is not counted.").arg(total));
+}
+
+
 // --- EDIScopeQtFIGWindow -----------------------------------------------------------------
 EDIScopeQtFIGWindow::EDIScopeQtFIGWindow(QWidget *parent, SnapshotProvider snapshot_provider) :
 		QWidget(parent, Qt::Tool), snapshot_provider(snapshot_provider), positioned(false) {
@@ -86,7 +183,7 @@ EDIScopeQtFIGWindow::EDIScopeQtFIGWindow(QWidget *parent, SnapshotProvider snaps
 
 	capacity_label = new QLabel(this);
 	capacity_label->setWordWrap(true);
-	capacity_label->setStyleSheet("color: #9aa3ad;");
+	EDIScopeQtTheme::SetRole(capacity_label, "muted");
 	layout->addWidget(capacity_label);
 
 	QTabWidget *tabs = new QTabWidget(this);
@@ -103,7 +200,10 @@ EDIScopeQtFIGWindow::EDIScopeQtFIGWindow(QWidget *parent, SnapshotProvider snaps
 		QList<QTableWidgetItem*> items = checks_view->selectedItems();
 		if(!items.isEmpty()) {
 			int row = items.first()->row();
-			selected_check = checks_view->item(row, 0)->text() + "|" + checks_view->item(row, 1)->text();
+			QString check = checks_view->item(row, 0)->text() + "|" + checks_view->item(row, 1)->text();
+			if(check != selected_check)
+				selected_entity.clear();
+			selected_check = check;
 		}
 		RefreshDetail();
 	});
@@ -114,8 +214,10 @@ EDIScopeQtFIGWindow::EDIScopeQtFIGWindow(QWidget *parent, SnapshotProvider snaps
 	detail_layout->setContentsMargins(0, 6, 0, 0);
 	detail_layout->setSpacing(6);
 	detail_title = new QLabel("Select a requirement above to see its measurement in detail.", detail);
-	detail_title->setStyleSheet("font-weight: 600; color: #c7ccd2;");
+	EDIScopeQtTheme::SetRole(detail_title, "subtitle");
 	detail_layout->addWidget(detail_title);
+	QHBoxLayout *detail_row = new QHBoxLayout();
+	detail_row->setSpacing(14);
 	detail_stack = new QStackedWidget(detail);
 	entities_view = CreateTable({"Entity", "Repetitions", "Min interval", "Avg interval", "Max interval", "Since last", "Verdict"}, detail_stack);
 	entities_view->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -125,7 +227,23 @@ EDIScopeQtFIGWindow::EDIScopeQtFIGWindow(QWidget *parent, SnapshotProvider snaps
 	check_events_view->setSelectionMode(QAbstractItemView::SingleSelection);
 	check_events_view->setSelectionBehavior(QAbstractItemView::SelectRows);
 	detail_stack->addWidget(check_events_view);
-	detail_layout->addWidget(detail_stack, 1);
+	detail_row->addWidget(detail_stack, 1);
+
+	histogram_view = new EDIScopeQtFIGHistogram(detail);
+	detail_row->addWidget(histogram_view, 0, Qt::AlignTop);
+	detail_layout->addLayout(detail_row, 1);
+
+	// selecting an entity (or an event) shows its own histogram, instead of the requirement's
+	connect(entities_view, &QTableWidget::itemSelectionChanged, this, [this]() {
+		QList<QTableWidgetItem*> items = entities_view->selectedItems();
+		selected_entity = items.isEmpty() ? QString() : entities_view->item(items.first()->row(), 0)->text();
+		RefreshHistogram();
+	});
+	connect(check_events_view, &QTableWidget::itemSelectionChanged, this, [this]() {
+		QList<QTableWidgetItem*> items = check_events_view->selectedItems();
+		selected_entity = items.isEmpty() ? QString() : check_events_view->item(items.first()->row(), 0)->data(Qt::UserRole).toString();
+		RefreshHistogram();
+	});
 	splitter->addWidget(detail);
 	splitter->setSizes({330, 330});
 
@@ -180,6 +298,10 @@ void EDIScopeQtFIGWindow::AlignToParent() {
 	move(parent_frame.right() + 20, parent_frame.top());
 }
 
+QString EDIScopeQtFIGWindow::EventKey(const FIG_ANALYSIS_EVENT& e) {
+	return QString::number(e.t_ms) + "|" + QString::fromStdString(e.entity + "|" + e.event);
+}
+
 QString EDIScopeQtFIGWindow::VerdictText(FIGVerdict verdict) {
 	// a symbol as well as a colour, so the verdicts never rely on colour alone
 	switch(verdict) {
@@ -219,6 +341,7 @@ void EDIScopeQtFIGWindow::FillEvents(QTableWidget *table, const std::vector<FIG_
 		const FIG_ANALYSIS_EVENT& e = events[i];
 		int row = (int) i, column = 0;
 		SetCell(table, row, column++, QDateTime::fromSecsSinceEpoch(e.time).toString("HH:mm:ss"), true);
+		table->item(row, 0)->setData(Qt::UserRole, EventKey(e));
 		if(full)
 			SetCell(table, row, column++, QString::fromStdString(e.fig));
 		SetCell(table, row, column++, QString::fromStdString(e.entity), true);
@@ -241,7 +364,7 @@ void EDIScopeQtFIGWindow::Refresh() {
 	// --- summary ---
 	QString crc = QString::number(snapshot.fib_crc_errors);
 	if(snapshot.fib_crc_errors)
-		crc = "<span style=\"color: #fbbf24;\">" + crc + "</span>";
+		crc = "<span style=\"color: " + EDIScopeQtTheme::warning.name() + ";\">" + crc + "</span>";
 	summary_label->setText(QString("Observed: <b>%1</b> &nbsp;·&nbsp; FIBs: %2 (CRC errors: %3) &nbsp;·&nbsp; FIC load: %4 % &nbsp;·&nbsp; Services: %5, components: %6")
 			.arg(QString::fromStdString(StringTools::MsToTimecode((long int) snapshot.observed_ms)))
 			.arg(snapshot.fibs).arg(crc)
@@ -322,6 +445,7 @@ void EDIScopeQtFIGWindow::RefreshDetail() {
 		detail_title->setText("Select a requirement above to see its measurement in detail.");
 		entities_view->setRowCount(0);
 		check_events_view->setRowCount(0);
+		histogram_view->Clear();
 		return;
 	}
 
@@ -334,11 +458,19 @@ void EDIScopeQtFIGWindow::RefreshDetail() {
 		for(const FIG_ANALYSIS_EVENT& e : snapshot.events)
 			if(e.fig == check->fig && e.requirement == check->requirement)
 				events.push_back(e);
+		check_events_view->blockSignals(true);
 		FillEvents(check_events_view, events);
+		check_events_view->clearSelection();
+		for(int row = 0; row < check_events_view->rowCount(); row++)
+			if(check_events_view->item(row, 0)->data(Qt::UserRole).toString() == selected_entity)
+				check_events_view->selectRow(row);
+		check_events_view->blockSignals(false);
+		RefreshHistogram();
 		return;
 	}
 
 	detail_stack->setCurrentIndex(0);
+	entities_view->blockSignals(true);
 	entities_view->setRowCount((int) check->entities.size());
 	for(size_t i = 0; i < check->entities.size(); i++) {
 		const FIG_ANALYSIS_ENTITY& e = check->entities[i];
@@ -351,9 +483,44 @@ void EDIScopeQtFIGWindow::RefreshDetail() {
 		SetCell(entities_view, row, 5, Interval(e.since_last_ms), true);
 		SetVerdictCell(entities_view, row, 6, e.verdict);
 	}
+	entities_view->clearSelection();
+	for(int row = 0; row < entities_view->rowCount(); row++)
+		if(entities_view->item(row, 0)->text() == selected_entity)
+			entities_view->selectRow(row);
+	entities_view->blockSignals(false);
+	RefreshHistogram();
 	static bool entities_sized = false;
 	if(!entities_sized && !check->entities.empty()) {
 		entities_view->resizeColumnsToContents();
 		entities_sized = true;
 	}
+}
+
+void EDIScopeQtFIGWindow::RefreshHistogram() {
+	const FIG_ANALYSIS_CHECK *check = nullptr;
+	for(const FIG_ANALYSIS_CHECK& c : snapshot.checks)
+		if(QString::fromStdString(c.fig) + "|" + QString::fromStdString(c.usage) == selected_check)
+			check = &c;
+	if(!check) {
+		histogram_view->Clear();
+		return;
+	}
+
+	QString check_name = QString::fromStdString(check->fig + " - " + check->usage);
+	if(!selected_entity.isEmpty()) {
+		if(check->burst) {
+			for(const FIG_ANALYSIS_EVENT& e : snapshot.events)
+				if(EventKey(e) == selected_entity) {
+					histogram_view->SetHistogram(e.histogram, e.nominal_ms, "Intervals - " + QString::fromStdString(e.entity + ", " + e.event));
+					return;
+				}
+		} else {
+			for(const FIG_ANALYSIS_ENTITY& e : check->entities)
+				if(QString::fromStdString(e.name) == selected_entity) {
+					histogram_view->SetHistogram(e.histogram, check->nominal_ms, "Intervals - " + QString::fromStdString(e.name));
+					return;
+				}
+		}
+	}
+	histogram_view->SetHistogram(check->histogram, check->nominal_ms, "Intervals - " + check_name + (check->burst ? " (all events)" : " (all entities)"));
 }

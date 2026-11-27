@@ -111,6 +111,8 @@ public:
 	void UpdateResult(int sid, int scids, const RDNS_RESULT& result);
 
 	void Clear();
+	// re-colours what was coloured when filled (statuses), after a theme change
+	void ApplyTheme();
 signals:
 	void TestRequested(int sid, int scids, int ecc, int eid);
 	// the user closed the window (it is only hidden)

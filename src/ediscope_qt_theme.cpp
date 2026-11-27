@@ -18,6 +18,10 @@
 
 #include "ediscope_qt_theme.h"
 
+#include <cstring>
+#include <utility>
+#include <vector>
+
 #include <QClipboard>
 #include <QDir>
 #include <QMenu>
@@ -33,109 +37,179 @@
 
 // --- EDIScopeQtTheme -----------------------------------------------------------------
 namespace EDIScopeQtTheme {
-	const QColor window_bg("#15171b");
-	const QColor panel_bg("#1b1f25");
-	const QColor bar_bg("#121417");
-	const QColor input_bg("#12151a");
-	const QColor border("#262b32");
-	const QColor input_border("#2b313a");
-	const QColor text("#e8ebee");
-	const QColor text_strong("#f3f5f7");
-	const QColor text_secondary("#c7ccd2");
-	const QColor text_muted("#9aa3ad");
-	const QColor text_disabled("#5c646e");
-	const QColor accent("#5eead4");
-	const QColor on_accent("#0d1210");
-	const QColor ok("#34d399");
-	const QColor warning("#fbbf24");
-	const QColor error("#f87171");
-	const QColor info("#60a5fa");
+	QColor window_bg, panel_bg, bar_bg, input_bg, border, input_border;
+	QColor text, text_strong, text_secondary, text_muted, text_disabled;
+	QColor accent, on_accent, ok, warning, error, info;
+	QColor meter_border, meter_tick, meter_label, meter_track, meter_diagonal, meter_peak, meter_points, meter_cap, meter_channel;
+	QColor cu_audio, cu_data, cu_data_hatch, cu_outline;
+	QColor timeline_block, timeline_border, timeline_time;
+	QColor slide_waiting;
+
+	static Theme current_theme = Theme::DARK;
+
+	// every colour of a theme, by the name the style sheet template uses (@name@)
+	typedef std::vector<std::pair<const char*, const char*>> palette_t;
+
+	static const palette_t dark_palette = {
+		{"window_bg", "#15171b"}, {"panel_bg", "#1b1f25"}, {"bar_bg", "#121417"}, {"toolbar_bg", "#191c22"},
+		{"input_bg", "#12151a"}, {"border", "#262b32"}, {"input_border", "#2b313a"}, {"hover_border", "#3d4550"},
+		{"disabled_border", "#22272e"}, {"text", "#e8ebee"}, {"text_strong", "#f3f5f7"}, {"text_secondary", "#c7ccd2"},
+		{"text_muted", "#9aa3ad"}, {"text_disabled", "#5c646e"}, {"input_text", "#dfe3e8"}, {"input_text_disabled", "#7b838d"},
+		{"accent", "#5eead4"}, {"on_accent", "#0d1210"}, {"ok", "#34d399"}, {"warning", "#fbbf24"}, {"error", "#f87171"}, {"info", "#60a5fa"},
+		{"menu_hover", "#1f242b"}, {"menu_selected", "#2a3038"}, {"alt_row", "#181c21"}, {"grid", "#21252b"},
+		{"header_bg", "#15181d"}, {"header_text", "#aeb6c0"}, {"header_divider", "#1f2329"},
+		{"selection_bg", "#23403c"}, {"selection_text", "#ffffff"}, {"text_selection_bg", "#2e5f59"},
+		{"scroll_handle", "#3a4049"}, {"tooltip_bg", "#22272e"}, {"progress_chunk", "#2e8f80"}, {"slider_handle", "#e8ebee"},
+		{"meter_border", "#4d4d4d"}, {"meter_tick", "#666666"}, {"meter_label", "#999999"}, {"meter_track", "#262626"},
+		{"meter_diagonal", "#595959"}, {"meter_peak", "#ffffff"}, {"meter_points", "#ffe633"}, {"meter_cap", "#fff266"},
+		{"meter_channel", "#b3b3b3"},
+		{"cu_audio", "#2f5f86"}, {"cu_data", "#3a4049"}, {"cu_data_hatch", "#59616c"}, {"cu_outline", "#0f1216"},
+		{"timeline_block", "#2f5f86"}, {"timeline_border", "#4a7fb0"}, {"timeline_time", "#c9dcf0"},
+		{"slide_waiting", "#003000"},
+	};
+
+	// light: the same structure, every text colour dark enough on its background (at least 4.5:1),
+	// the bright accents of the dark theme deepened so they stay readable on white
+	static const palette_t light_palette = {
+		{"window_bg", "#eef0f3"}, {"panel_bg", "#ffffff"}, {"bar_bg", "#e4e7ec"}, {"toolbar_bg", "#f6f7f9"},
+		{"input_bg", "#f7f8fa"}, {"border", "#d5dae1"}, {"input_border", "#bfc6cf"}, {"hover_border", "#8d97a3"},
+		{"disabled_border", "#dde1e6"}, {"text", "#1f2328"}, {"text_strong", "#0d1117"}, {"text_secondary", "#353c45"},
+		{"text_muted", "#59636e"}, {"text_disabled", "#9aa3ad"}, {"input_text", "#1f2328"}, {"input_text_disabled", "#8a939d"},
+		{"accent", "#0f766e"}, {"on_accent", "#ffffff"}, {"ok", "#15803d"}, {"warning", "#b45309"}, {"error", "#b91c1c"}, {"info", "#1d4ed8"},
+		{"menu_hover", "#d9dee5"}, {"menu_selected", "#dbe9e7"}, {"alt_row", "#f6f8fa"}, {"grid", "#e6e9ed"},
+		{"header_bg", "#eef1f4"}, {"header_text", "#353c45"}, {"header_divider", "#dde1e6"},
+		{"selection_bg", "#c9ebe6"}, {"selection_text", "#0d1117"}, {"text_selection_bg", "#b4e2dc"},
+		{"scroll_handle", "#c2c8d0"}, {"tooltip_bg", "#ffffff"}, {"progress_chunk", "#14968a"}, {"slider_handle", "#ffffff"},
+		{"meter_border", "#a8b0ba"}, {"meter_tick", "#8b949e"}, {"meter_label", "#59636e"}, {"meter_track", "#e5e8ec"},
+		{"meter_diagonal", "#b8bfc8"}, {"meter_peak", "#1f2328"}, {"meter_points", "#d9480f"}, {"meter_cap", "#c2410c"},
+		{"meter_channel", "#353c45"},
+		{"cu_audio", "#bcd9f2"}, {"cu_data", "#e5e7eb"}, {"cu_data_hatch", "#9ca3af"}, {"cu_outline", "#7c8591"},
+		{"timeline_block", "#dbeafe"}, {"timeline_border", "#93c5fd"}, {"timeline_time", "#1e3a8a"},
+		{"slide_waiting", "#d8eedd"},
+	};
 
 	static const char *style_sheet = R"(
-QMainWindow, QDialog { background: #15171b; }
-QWidget { color: #e8ebee; }
+QMainWindow, QDialog { background: @window_bg@; }
+QWidget { color: @text@; }
 
-QMenuBar { background: #121417; color: #c7ccd2; border-bottom: 1px solid #262b32; padding: 2px 6px; }
+QMenuBar { background: @bar_bg@; color: @text_secondary@; border-bottom: 1px solid @border@; padding: 2px 6px; }
 QMenuBar::item { padding: 4px 10px; background: transparent; }
-QMenuBar::item:selected { background: #1f242b; border-radius: 4px; }
-QMenu { background: #1b1f25; color: #e8ebee; border: 1px solid #2b313a; padding: 4px; }
+QMenuBar::item:selected { background: @menu_hover@; border-radius: 4px; }
+QMenu { background: @panel_bg@; color: @text@; border: 1px solid @input_border@; padding: 4px; }
 QMenu::item { padding: 5px 22px 5px 22px; border-radius: 4px; }
-QMenu::item:selected { background: #2a3038; }
-QMenu::item:disabled { color: #5c646e; }
-QMenu::separator { height: 1px; background: #262b32; margin: 4px 6px; }
+QMenu::item:selected { background: @menu_selected@; }
+QMenu::item:disabled { color: @text_disabled@; }
+QMenu::separator { height: 1px; background: @border@; margin: 4px 6px; }
 
-QToolBar { background: #191c22; border: none; border-bottom: 1px solid #262b32; padding: 6px 10px; spacing: 8px; }
-QToolBar::separator { background: #2b313a; width: 1px; margin: 2px 6px; }
+QToolBar { background: @toolbar_bg@; border: none; border-bottom: 1px solid @border@; padding: 6px 10px; spacing: 8px; }
+QToolBar::separator { background: @input_border@; width: 1px; margin: 2px 6px; }
 
-QStatusBar { background: #121417; color: #c7ccd2; border-top: 1px solid #262b32; }
+QStatusBar { background: @bar_bg@; color: @text_secondary@; border-top: 1px solid @border@; }
 QStatusBar::item { border: none; }
 QStatusBar QLabel { padding: 0 8px; }
 
-QFrame#panel { background: #1b1f25; border: 1px solid #262b32; border-radius: 10px; }
-QFrame#panelHead { background: transparent; border: none; border-bottom: 1px solid #262b32; }
-QLabel#panelTitle { color: #f3f5f7; font-weight: 600; }
-QLabel#panelInfo { color: #9aa3ad; }
+QFrame#panel { background: @panel_bg@; border: 1px solid @border@; border-radius: 10px; }
+QFrame#panelHead { background: transparent; border: none; border-bottom: 1px solid @border@; }
+QLabel#panelTitle { color: @text_strong@; font-weight: 600; }
+QLabel#panelInfo { color: @text_muted@; }
+QWidget#cuBox { border-top: 1px solid @border@; }
 
 QPushButton, QToolButton {
-	background: #12151a; border: 1px solid #2b313a; border-radius: 7px; color: #e8ebee;
+	background: @input_bg@; border: 1px solid @input_border@; border-radius: 7px; color: @text@;
 	padding: 5px 12px; min-height: 18px;
 }
-QPushButton:hover, QToolButton:hover { border-color: #3d4550; }
-QPushButton:checked, QToolButton:checked { border-color: #5eead4; color: #5eead4; }
-QPushButton:disabled, QToolButton:disabled { color: #5c646e; border-color: #22272e; }
-QPushButton#connectButton { background: #5eead4; border-color: #5eead4; color: #0d1210; font-weight: 600; padding: 5px 16px; }
-QPushButton#connectButton:checked { background: #12151a; color: #5eead4; }
-QPushButton#recordButton[recording="true"] { border-color: #f87171; color: #f87171; font-weight: 600; }
+QPushButton:hover, QToolButton:hover { border-color: @hover_border@; }
+QPushButton:checked, QToolButton:checked { border-color: @accent@; color: @accent@; }
+QPushButton:disabled, QToolButton:disabled { color: @text_disabled@; border-color: @disabled_border@; }
+QPushButton#connectButton { background: @accent@; border-color: @accent@; color: @on_accent@; font-weight: 600; padding: 5px 16px; }
+QPushButton#connectButton:checked { background: @input_bg@; color: @accent@; }
+QPushButton#recordButton[recording="true"] { border-color: @error@; color: @error@; font-weight: 600; }
 
 QComboBox, QLineEdit {
-	background: #12151a; border: 1px solid #2b313a; border-radius: 7px; color: #dfe3e8;
-	padding: 4px 8px; selection-background-color: #2e5f59;
+	background: @input_bg@; border: 1px solid @input_border@; border-radius: 7px; color: @input_text@;
+	padding: 4px 8px; selection-background-color: @text_selection_bg@; selection-color: @text_strong@;
 }
-QComboBox:disabled, QLineEdit:disabled { color: #7b838d; }
-QComboBox::drop-down { border: none; border-left: 1px solid #2b313a; width: 26px; }
+QComboBox:disabled, QLineEdit:disabled { color: @input_text_disabled@; }
+QComboBox::drop-down { border: none; border-left: 1px solid @input_border@; width: 26px; }
 QComboBox::down-arrow { image: url(@ARROW_DOWN@); width: 10px; height: 6px; }
 QComboBox::down-arrow:disabled { image: url(@ARROW_DOWN_DISABLED@); }
-QComboBox QAbstractItemView { background: #1b1f25; border: 1px solid #2b313a; selection-background-color: #2a3038; }
+QComboBox QAbstractItemView { background: @panel_bg@; color: @text@; border: 1px solid @input_border@; selection-background-color: @menu_selected@; selection-color: @text_strong@; }
 
-QTableView {
-	background: #1b1f25; alternate-background-color: #181c21; border: none; gridline-color: #21252b;
-	selection-background-color: #23403c; selection-color: #ffffff; outline: 0;
+QCheckBox { color: @text@; spacing: 8px; }
+QCheckBox::indicator { width: 14px; height: 14px; border: 1px solid @hover_border@; border-radius: 3px; background: @input_bg@; }
+QCheckBox::indicator:checked { background: @accent@; border-color: @accent@; image: url(@CHECK_MARK@); }
+QCheckBox::indicator:disabled { border-color: @disabled_border@; }
+QCheckBox:disabled { color: @text_disabled@; }
+QRadioButton { color: @text@; spacing: 8px; }
+
+QTableView, QListView, QTreeView {
+	background: @panel_bg@; alternate-background-color: @alt_row@; border: none; gridline-color: @grid@;
+	selection-background-color: @selection_bg@; selection-color: @selection_text@; outline: 0;
 }
 QHeaderView::section {
-	background: #15181d; color: #aeb6c0; border: none; border-bottom: 1px solid #262b32;
-	border-right: 1px solid #1f2329; padding: 5px 8px;
+	background: @header_bg@; color: @header_text@; border: none; border-bottom: 1px solid @border@;
+	border-right: 1px solid @header_divider@; padding: 5px 8px;
 }
-QTableCornerButton::section { background: #15181d; border: none; }
+QTableCornerButton::section { background: @header_bg@; border: none; }
+QPlainTextEdit, QTextEdit { background: @input_bg@; color: @text@; selection-background-color: @text_selection_bg@; selection-color: @text_strong@; }
+QPlainTextEdit#xmlView { border: 1px solid @border@; border-radius: 6px; }
+QScrollArea { background: transparent; }
+QScrollArea > QWidget > QWidget { background: transparent; }
 
 QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }
 QScrollBar:horizontal { background: transparent; height: 10px; margin: 0; }
-QScrollBar::handle { background: #3a4049; border-radius: 5px; min-height: 24px; min-width: 24px; }
+QScrollBar::handle { background: @scroll_handle@; border-radius: 5px; min-height: 24px; min-width: 24px; }
 QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
 QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
 
-QTabWidget::pane { border: 1px solid #262b32; border-radius: 8px; background: #1b1f25; top: -1px; }
+QTabWidget::pane { border: 1px solid @border@; border-radius: 8px; background: @panel_bg@; top: -1px; }
 QTabBar::tab {
-	background: #12151a; color: #c7ccd2; border: 1px solid #2b313a; border-bottom: none;
+	background: @input_bg@; color: @text_secondary@; border: 1px solid @input_border@; border-bottom: none;
 	padding: 6px 14px; margin-right: 2px; border-top-left-radius: 6px; border-top-right-radius: 6px;
 }
-QTabBar::tab:selected { background: #1b1f25; color: #f3f5f7; border-color: #5eead4; font-weight: 600; }
-QTabBar::tab:hover:!selected { border-color: #3d4550; }
-QSplitter::handle { background: #262b32; }
+QTabBar::tab:selected { background: @panel_bg@; color: @text_strong@; border-color: @accent@; font-weight: 600; }
+QTabBar::tab:hover:!selected { border-color: @hover_border@; }
+QSplitter::handle { background: @border@; }
 QSplitter::handle:horizontal { width: 1px; margin: 0 4px; }
 
-QToolTip { background: #22272e; color: #e8ebee; border: 1px solid #3d4550; padding: 4px; }
+QToolTip { background: @tooltip_bg@; color: @text@; border: 1px solid @hover_border@; padding: 4px; }
+QWidget#imagePopup { background: @tooltip_bg@; border: 1px solid @hover_border@; }
+QWidget#imagePopup QLabel { background: transparent; border: none; color: @text@; }
 
-QProgressBar { background: #12151a; border: 1px solid #2b313a; border-radius: 4px; text-align: center; color: #c7ccd2; max-height: 14px; }
-QProgressBar::chunk { background: #2e8f80; border-radius: 3px; }
+QProgressBar { background: @input_bg@; border: 1px solid @input_border@; border-radius: 4px; text-align: center; color: @text_secondary@; max-height: 14px; }
+QProgressBar::chunk { background: @progress_chunk@; border-radius: 3px; }
 
-QSlider::groove:horizontal { height: 4px; background: #2b313a; border-radius: 2px; }
-QSlider::sub-page:horizontal { background: #5eead4; border-radius: 2px; }
-QSlider::handle:horizontal { background: #e8ebee; width: 12px; height: 12px; margin: -4px 0; border-radius: 6px; }
-QSlider::handle:horizontal:disabled { background: #5c646e; }
+QSlider::groove:horizontal { height: 4px; background: @input_border@; border-radius: 2px; }
+QSlider::sub-page:horizontal { background: @accent@; border-radius: 2px; }
+QSlider::handle:horizontal { background: @slider_handle@; border: 1px solid @hover_border@; width: 12px; height: 12px; margin: -5px 0; border-radius: 7px; }
+QSlider::handle:horizontal:disabled { background: @text_disabled@; }
+
+QLabel#slideImage { background: @input_bg@; border-radius: 6px; }
+QFrame#spiLogo { background: @input_bg@; border: 1px solid @input_border@; border-radius: 6px; }
+QListWidget#logoList { background: transparent; }
+QListWidget#logoList::item { color: @text_muted@; }
+
+QLabel[role="muted"] { color: @text_muted@; }
+QLabel[role="message"] { color: @text_muted@; font-size: 13px; }
+QLabel[role="title"] { font-weight: 700; font-size: 14px; color: @text_strong@; }
+QLabel[role="caption"] { font-weight: 600; color: @text_muted@; }
+QLabel[role="subtitle"] { font-weight: 600; color: @text_secondary@; }
+QLabel[role="note"] { color: @text_muted@; font-size: 11px; }
+QLabel[role="small"] { color: @text_muted@; font-size: 10px; border: none; }
+QLabel[role="ok"] { color: @ok@; }
+QLabel[role="warning"] { color: @warning@; }
+QLabel[role="error"] { color: @error@; }
 )";
 
+	static QColor Lookup(const palette_t& palette, const char *name) {
+		for(const std::pair<const char*, const char*>& kv : palette)
+			if(strcmp(kv.first, name) == 0)
+				return QColor(kv.second);
+		return QColor();
+	}
+
 	// Fusion, without icons on dialog buttons ("Close", "OK", ...): the desktop's icon theme may
-	// well be dark-on-dark here, which made them invisible
+	// well be dark-on-dark (or light-on-light) here, which made them invisible
 	class Style : public QProxyStyle {
 	public:
 		Style() : QProxyStyle(QStyleFactory::create("Fusion")) {}
@@ -145,6 +219,26 @@ QSlider::handle:horizontal:disabled { background: #5c646e; }
 			return QProxyStyle::styleHint(hint, option, widget, return_data);
 		}
 	};
+
+	Theme Current() {
+		return current_theme;
+	}
+
+	QString ThemeName(Theme theme) {
+		return theme == Theme::LIGHT ? "light" : "dark";
+	}
+
+	Theme ThemeFromName(const QString& name) {
+		return name == "light" ? Theme::LIGHT : Theme::DARK;
+	}
+
+	void SetRole(QWidget *widget, const char *role) {
+		if(widget->property("role").toString() == role)
+			return;
+		widget->setProperty("role", role);
+		widget->style()->unpolish(widget);
+		widget->style()->polish(widget);
+	}
 
 	void MakeTableCopyable(QTableWidget *table) {
 		table->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -169,9 +263,28 @@ QSlider::handle:horizontal:disabled { background: #5c646e; }
 		});
 	}
 
-	void Apply(QApplication& app) {
+	void Apply(QApplication& app, Theme theme) {
+		current_theme = theme;
+		const palette_t& palette = theme == Theme::LIGHT ? light_palette : dark_palette;
+
+		struct {QColor *color; const char *name;} colors[] = {
+			{&window_bg, "window_bg"}, {&panel_bg, "panel_bg"}, {&bar_bg, "bar_bg"}, {&input_bg, "input_bg"},
+			{&border, "border"}, {&input_border, "input_border"}, {&text, "text"}, {&text_strong, "text_strong"},
+			{&text_secondary, "text_secondary"}, {&text_muted, "text_muted"}, {&text_disabled, "text_disabled"},
+			{&accent, "accent"}, {&on_accent, "on_accent"}, {&ok, "ok"}, {&warning, "warning"}, {&error, "error"}, {&info, "info"},
+			{&meter_border, "meter_border"}, {&meter_tick, "meter_tick"}, {&meter_label, "meter_label"}, {&meter_track, "meter_track"},
+			{&meter_diagonal, "meter_diagonal"}, {&meter_peak, "meter_peak"}, {&meter_points, "meter_points"}, {&meter_cap, "meter_cap"},
+			{&meter_channel, "meter_channel"},
+			{&cu_audio, "cu_audio"}, {&cu_data, "cu_data"}, {&cu_data_hatch, "cu_data_hatch"}, {&cu_outline, "cu_outline"},
+			{&timeline_block, "timeline_block"}, {&timeline_border, "timeline_border"}, {&timeline_time, "timeline_time"},
+			{&slide_waiting, "slide_waiting"},
+		};
+		for(auto& c : colors)
+			*c.color = Lookup(palette, c.name);
+
 		// Fusion: the same flat rendering on every desktop, which the style sheet then colours
-		app.setStyle(new Style());
+		if(!dynamic_cast<Style*>(app.style()))
+			app.setStyle(new Style());
 
 		// the palette covers whatever the style sheet doesn't (standard dialogs, message boxes)
 		QPalette p;
@@ -182,10 +295,10 @@ QSlider::handle:horizontal:disabled { background: #5c646e; }
 		p.setColor(QPalette::Text, text);
 		p.setColor(QPalette::Button, panel_bg);
 		p.setColor(QPalette::ButtonText, text);
-		p.setColor(QPalette::ToolTipBase, QColor("#22272e"));
+		p.setColor(QPalette::ToolTipBase, Lookup(palette, "tooltip_bg"));
 		p.setColor(QPalette::ToolTipText, text);
-		p.setColor(QPalette::Highlight, QColor("#2e5f59"));
-		p.setColor(QPalette::HighlightedText, QColor("#ffffff"));
+		p.setColor(QPalette::Highlight, Lookup(palette, "text_selection_bg"));
+		p.setColor(QPalette::HighlightedText, text_strong);
 		p.setColor(QPalette::Link, accent);
 		p.setColor(QPalette::PlaceholderText, text_disabled);
 		p.setColor(QPalette::Disabled, QPalette::WindowText, text_disabled);
@@ -193,9 +306,8 @@ QSlider::handle:horizontal:disabled { background: #5c646e; }
 		p.setColor(QPalette::Disabled, QPalette::ButtonText, text_disabled);
 		app.setPalette(p);
 
-		// the combo box arrow: a style sheet can only take it from an image file, so it is drawn
-		// here once and saved next to the user's other EDIScope files
-		QString sheet = style_sheet;
+		// a style sheet can only take an image (combo box arrow, check mark) from a file: they are
+		// drawn here, in the theme's colours, and saved next to the user's other EDIScope files
 		QString dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
 		QDir().mkpath(dir);
 		auto arrow = [&](const QString& name, const QColor& color) {
@@ -207,14 +319,35 @@ QSlider::handle:horizontal:disabled { background: #5c646e; }
 			painter.setBrush(color);
 			painter.drawPolygon(QPolygonF({QPointF(1, 1), QPointF(19, 1), QPointF(10, 11)}));
 			painter.end();
-			QString path = dir + "/" + name + ".png";
+			QString path = dir + "/" + name + "-" + ThemeName(theme) + ".png";
 			pixmap.save(path);
 			return path;
 		};
+		auto check_mark = [&](const QString& name, const QColor& color) {
+			QPixmap pixmap(28, 28);	// drawn at 2x, shown at 14x14
+			pixmap.fill(Qt::transparent);
+			QPainter painter(&pixmap);
+			painter.setRenderHint(QPainter::Antialiasing, true);
+			painter.setPen(QPen(color, 3.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+			painter.drawPolyline(QPolygonF({QPointF(6, 14.5), QPointF(11.5, 20), QPointF(22, 8)}));
+			painter.end();
+			QString path = dir + "/" + name + "-" + ThemeName(theme) + ".png";
+			pixmap.save(path);
+			return path;
+		};
+
+		QString sheet = style_sheet;
 		sheet.replace("@ARROW_DOWN@", arrow("arrow-down", text_secondary));
 		sheet.replace("@ARROW_DOWN_DISABLED@", arrow("arrow-down-disabled", text_disabled));
+		sheet.replace("@CHECK_MARK@", check_mark("check-mark", on_accent));
+		for(const std::pair<const char*, const char*>& kv : palette)
+			sheet.replace(QString("@") + kv.first + "@", kv.second);
 
 		app.setStyleSheet(sheet);
+
+		// custom-drawn widgets read the colours above when they paint
+		for(QWidget *widget : QApplication::allWidgets())
+			widget->update();
 	}
 
 	QFont MonoFont() {

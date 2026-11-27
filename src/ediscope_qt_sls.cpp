@@ -22,6 +22,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QContextMenuEvent>
+#include <QDateTime>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFile>
@@ -47,6 +48,17 @@ static QString GetContentTypeDisplay(int content_sub_type) {
 }
 
 static QString BuildSlideTooltip(const MOT_FILE& slide, const QImage& image) {
+	// reception: from its first segment to the complete slide, shown right away
+	QString reception;
+	if(slide.reception_end.time_since_epoch().count()) {
+		QDateTime end = QDateTime::fromMSecsSinceEpoch(std::chrono::duration_cast<std::chrono::milliseconds>(slide.reception_end.time_since_epoch()).count());
+		reception = "\nReceived and shown at: " + end.toString("HH:mm:ss");
+		if(slide.reception_start.time_since_epoch().count()) {
+			double seconds = std::chrono::duration<double>(slide.reception_end - slide.reception_start).count();
+			reception += "\nReception time: " + QString::number(seconds, 'f', 1) + " s";
+		}
+	}
+
 	return QString(
 			"Resolution: %1x%2 pixels\n"
 			"Size: %3 bytes\n"
@@ -59,23 +71,23 @@ static QString BuildSlideTooltip(const MOT_FILE& slide, const QImage& image) {
 			.arg(QString::fromStdString(slide.content_name))
 			.arg(QString::fromStdString(slide.content_name_charset))
 			// hardly any receiver uses it, so it is only shown here rather than as a link below the slide
-			+ (slide.click_through_url.empty() ? QString() : "\nClickThroughURL: " + QString::fromStdString(slide.click_through_url));
+			+ (slide.click_through_url.empty() ? QString() : "\nClickThroughURL: " + QString::fromStdString(slide.click_through_url))
+			+ reception;
 }
 
 
 // --- EDIScopeQtImagePopup -----------------------------------------------------------------
 EDIScopeQtImagePopup::EDIScopeQtImagePopup(QWidget *parent) : QWidget(parent, Qt::ToolTip | Qt::FramelessWindowHint) {
 	setAttribute(Qt::WA_ShowWithoutActivating);
-	setStyleSheet("background: #22272e; border: 1px solid #3d4550;");
+	setObjectName("imagePopup");	// coloured by the theme's style sheet
+	setAttribute(Qt::WA_StyledBackground);
 
 	QVBoxLayout *layout = new QVBoxLayout(this);
 	layout->setContentsMargins(6, 6, 6, 6);
 	layout->setSpacing(4);
 
 	image_label = new QLabel(this);
-	image_label->setStyleSheet("border: none;");
 	text_label = new QLabel(this);
-	text_label->setStyleSheet("border: none; color: #e8ebee;");
 
 	layout->addWidget(image_label);
 	layout->addWidget(text_label);
@@ -122,7 +134,7 @@ EDIScopeQtSlideshow::EDIScopeQtSlideshow(QWidget *parent) : QWidget(parent), wai
 	image_label->setContextMenuPolicy(Qt::CustomContextMenu);
 	image_label->installEventFilter(this);	// hovering shows the slide's popup, as for the history thumbnails
 	image_label->setMouseTracking(true);	// so the popup follows the pointer
-	image_label->setStyleSheet("background: #12151a; border-radius: 6px;");
+	image_label->setObjectName("slideImage");
 	connect(image_label, &QLabel::customContextMenuRequested, this, [this](const QPoint& pos) {
 		popup->hide();
 		if(has_current)
@@ -171,7 +183,7 @@ EDIScopeQtSlideshow::EDIScopeQtSlideshow(QWidget *parent) : QWidget(parent), wai
 
 void EDIScopeQtSlideshow::AwaitSlide() {
 	QPixmap placeholder(max_slide_width, max_slide_height);
-	placeholder.fill(QColor("#003000"));
+	placeholder.fill(EDIScopeQtTheme::slide_waiting);
 	image_label->setPixmap(placeholder);
 	waiting = true;
 

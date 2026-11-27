@@ -302,6 +302,7 @@ void MOTManager::HandleMOTDataGroup(const std::vector<uint8_t>& dg) {
 	if(current_transport_id != transport_id) {
 		current_transport_id = transport_id;
 		object = MOTObject();
+		object_start = std::chrono::system_clock::now();
 	}
 	object.AddSeg(dg_type == 3, seg_number, last_seg, &dg[offset], seg_size);
 
@@ -322,6 +323,10 @@ void MOTManager::HandleMOTDataGroup(const std::vector<uint8_t>& dg) {
 		observer->MOTFileProgress(fraction);
 
 	// if object shall be shown, forward it
-	if(display)
-		observer->MOTFileCompleted(object.GetFile());
+	if(display) {
+		MOT_FILE file = object.GetFile();
+		file.reception_start = object_start;
+		file.reception_end = std::chrono::system_clock::now();
+		observer->MOTFileCompleted(file);
+	}
 }

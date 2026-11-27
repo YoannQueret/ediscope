@@ -30,6 +30,25 @@
 #include "fig_analyzer.h"
 
 
+// --- EDIScopeQtFIGHistogram -----------------------------------------------------------------
+// the distribution of the intervals between repetitions, one bar per class (relative to the
+// nominal interval), with its count and share; each class is marked ✓ (at the nominal rate),
+// ~ (slower, but not below one third of it) or ✗ (below) - not by colour alone
+class EDIScopeQtFIGHistogram : public QWidget {
+	Q_OBJECT
+private:
+	FIGHistogram histogram;
+	double nominal_ms;
+	QString title;
+protected:
+	void paintEvent(QPaintEvent *event) override;
+public:
+	EDIScopeQtFIGHistogram(QWidget *parent = nullptr);
+	void SetHistogram(const FIGHistogram& histogram, double nominal_ms, const QString& title);
+	void Clear();
+};
+
+
 // --- EDIScopeQtFIGWindow -----------------------------------------------------------------
 // floating window showing the FIG analysis (see FIGAnalyzer): every repetition requirement of
 // ETSI TS 103 176 with its verdict (and, for the selected one, the measurement per entity or per
@@ -52,12 +71,16 @@ private:
 	QStackedWidget *detail_stack;	// entities (periodic check), or events (burst check)
 	QTableWidget *entities_view;
 	QTableWidget *check_events_view;
+	EDIScopeQtFIGHistogram *histogram_view;
+	QString selected_entity;		// name of the entity (or key of the event) selected in the detail
 	QTableWidget *figs_view;
 	QTableWidget *events_view;
 	QString selected_check;			// fig + usage of the selected check, kept across refreshes
 
 	void Refresh();
 	void RefreshDetail();
+	void RefreshHistogram();
+	static QString EventKey(const FIG_ANALYSIS_EVENT& e);
 	static void SetVerdictCell(QTableWidget *table, int row, int column, FIGVerdict verdict);
 	static void FillEvents(QTableWidget *table, const std::vector<FIG_ANALYSIS_EVENT>& events);
 protected:
@@ -69,6 +92,9 @@ public:
 
 	// places the window right of the main window - only the first time it is shown
 	void AlignToParent();
+
+	// re-colours what was coloured when filled (verdicts, summary), after a theme change
+	void ApplyTheme() {if(isVisible()) Refresh();}
 
 	static QString VerdictText(FIGVerdict verdict);
 	static QColor VerdictColor(FIGVerdict verdict);

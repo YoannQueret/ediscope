@@ -194,12 +194,17 @@ private:
 	void UpdateRecordingUI();
 	void UpdateEnsembleRecordingStatus();
 	void ShowSettings();
+	void ApplyTheme(EDIScopeQtTheme::Theme theme);
 	static QStringList ToolbarShortcuts();	// "links", "rdns", "spi", "fig" - 3 at most
 	void ApplyToolbarShortcuts();
 	std::map<QString, QAction*> shortcut_actions;	// the toolbar's widget action of each shortcut button
 
-	// FIG repetition analysis - fed with the FIC all the time, shown on demand
+	// FIG repetition analysis - started the first time its window is opened for the current source
+	// (or right away, if the window is open when a source starts), then runs until the source
+	// changes, whether the window is open or not
 	FIGAnalyzer fig_analyzer;
+	std::atomic<bool> fig_analysis_running{false};
+	void StartFIGAnalysis();
 	QPushButton *btn_fig;
 	QAction *action_fig;
 	EDIScopeQtFIGWindow *fig_window;
@@ -359,7 +364,8 @@ private:
 	void EnsembleEDITiming(const EDI_TIMING& timing) override;
 	void EnsembleProcessFIC(const uint8_t *data, size_t len) override {
 		fic_decoder->Process(data, len);
-		fig_analyzer.ProcessFIC(data, len);
+		if(fig_analysis_running)
+			fig_analyzer.ProcessFIC(data, len);
 	}
 	void EnsembleProcessPAD(const uint8_t *xpad_data, size_t xpad_len, bool exact_xpad_len, const uint8_t* fpad_data) override {pad_decoder->Process(xpad_data, xpad_len, exact_xpad_len, fpad_data);}
 

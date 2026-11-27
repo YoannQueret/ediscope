@@ -46,6 +46,8 @@ public:
 
 	void UpdateDLPlusInfo(const DL_STATE& dl);
 	void ClearDLPlusInfo();
+	// redraws the rows in the current theme's colours
+	void Refresh() {Render();}
 };
 
 #endif /* EDISCOPE_QT_DL_PLUS_H_ */

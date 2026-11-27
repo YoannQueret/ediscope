@@ -59,6 +59,30 @@ void FIGGapStats::Add(double t_ms) {
 }
 
 
+// --- FIGHistogram -----------------------------------------------------------------
+const double FIGHistogram::limits[FIGHistogram::classes - 1] = {1, 1.5, 2, 3, 5, 10};
+
+void FIGHistogram::Add(double gap_ms, double nominal_ms) {
+	// the same FIB time quantum tolerance as the verdicts, so "<= 1x" and "<= 3x" match them
+	int c = 0;
+	while(c < classes - 1 && gap_ms > limits[c] * nominal_ms + TOLERANCE_MS)
+		c++;
+	counts[c]++;
+}
+
+void FIGHistogram::Merge(const FIGHistogram& other) {
+	for(int c = 0; c < classes; c++)
+		counts[c] += other.counts[c];
+}
+
+uint64_t FIGHistogram::Total() const {
+	uint64_t total = 0;
+	for(int c = 0; c < classes; c++)
+		total += counts[c];
+	return total;
+}
+
+
 // --- FIGAnalyzer -----------------------------------------------------------------
 FIGAnalyzer::FIGAnalyzer() {
 	Reset();
@@ -579,6 +603,8 @@ void FIGAnalyzer::Occurrence(const std::string& check_id, uint64_t key, const st
 	Entity& entity = it->second.entities[key];
 	if(entity.gaps.count == 0)
 		entity.name = name;
+	else
+		entity.histogram.Add(now_ms - entity.gaps.last_ms, it->second.nominal_ms);
 	entity.gaps.Add(now_ms);
 }
 
@@ -617,7 +643,7 @@ void FIGAnalyzer::CEI(const std::string& check_id, uint64_t key, const std::stri
 		event = &OpenEvent(check_id, name, "CEI (change event indication)", check.burst_window_ms, check.nominal_ms);
 		open_cei[event_key] = event;
 	}
-	event->gaps.Add(now_ms);
+	AddToEvent(*event);
 }
 
 void FIGAnalyzer::Announcement(const std::string& fig, uint64_t key, const std::string& name, uint16_t asw) {
@@ -636,7 +662,7 @@ void FIGAnalyzer::Announcement(const std::string& fig, uint64_t key, const std::
 		}
 
 		if(cluster.start_event && !cluster.start_event->complete) {
-			cluster.start_event->gaps.Add(now_ms);
+			AddToEvent(*cluster.start_event);
 		} else {
 			cluster.start_event = nullptr;
 			Occurrence(fig + "c", key, name + " (" + AnnouncementTypeName(asw) + ")");
@@ -650,8 +676,14 @@ void FIGAnalyzer::Announcement(const std::string& fig, uint64_t key, const std::
 			checks[fig + "c"].entities.erase(key);
 		}
 		if(cluster.end_event && !cluster.end_event->complete)
-			cluster.end_event->gaps.Add(now_ms);
+			AddToEvent(*cluster.end_event);
 	}
+}
+
+void FIGAnalyzer::AddToEvent(Event& event) {
+	if(event.gaps.count)
+		event.histogram.Add(now_ms - event.gaps.last_ms, event.nominal_ms);
+	event.gaps.Add(now_ms);
 }
 
 void FIGAnalyzer::CloseExpiredEvents() {
@@ -774,6 +806,8 @@ FIG_ANALYSIS_SNAPSHOT FIGAnalyzer::Snapshot() {
 				if(check.nominal_ms >= 10000)
 					e.max_gap_ms = std::max(e.max_gap_ms, entity.gaps.first_ms);
 				e.verdict = PeriodicVerdict(e.max_gap_ms, entity.gaps.count > 1, check.nominal_ms);
+				e.histogram = entity.histogram;
+				c.histogram.Merge(entity.histogram);
 				c.worst_gap_ms = std::max(c.worst_gap_ms, e.max_gap_ms);
 				c.verdict = c.verdict == FIGVerdict::NONE ? e.verdict : std::max(c.verdict, e.verdict);
 				c.entities.push_back(e);
@@ -783,6 +817,7 @@ FIG_ANALYSIS_SNAPSHOT FIGAnalyzer::Snapshot() {
 				if(event.check_id != kv.first)
 					continue;
 				FIGVerdict v = EventVerdict(event);
+				c.histogram.Merge(event.histogram);
 				if(v != FIGVerdict::NONE)
 					c.verdict = c.verdict == FIGVerdict::NONE ? v : std::max(c.verdict, v);
 				c.worst_gap_ms = std::max(c.worst_gap_ms, event.gaps.max_gap_ms);
@@ -841,6 +876,8 @@ FIG_ANALYSIS_SNAPSHOT FIGAnalyzer::Snapshot() {
 		e.complete = it->complete;
 		e.verdict = EventVerdict(*it);
 		e.note = it->note;
+		e.nominal_ms = it->nominal_ms;
+		e.histogram = it->histogram;
 		snapshot.events.push_back(e);
 	}
 

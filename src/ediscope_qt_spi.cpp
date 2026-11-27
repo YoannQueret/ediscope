@@ -47,7 +47,7 @@ static QLabel* CreateMessage(const QString& text, QWidget *parent) {
 	label->setWordWrap(true);
 	label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
 	label->setContentsMargins(14, 14, 14, 14);
-	label->setStyleSheet("color: #9aa3ad; font-size: 13px;");
+	EDIScopeQtTheme::SetRole(label, "message");
 	return label;
 }
 
@@ -117,8 +117,8 @@ void EDIScopeQtSPITimeline::paintEvent(QPaintEvent* /*event*/) {
 
 		QPainterPath path;
 		path.addRoundedRect(rect.adjusted(0, 0.5, 0, -0.5), 6, 6);
-		painter.fillPath(path, QColor("#2f5f86"));
-		painter.setPen(QColor("#4a7fb0"));
+		painter.fillPath(path, EDIScopeQtTheme::timeline_block);
+		painter.setPen(EDIScopeQtTheme::timeline_border);
 		painter.drawPath(path);
 
 		painter.save();
@@ -132,7 +132,7 @@ void EDIScopeQtSPITimeline::paintEvent(QPaintEvent* /*event*/) {
 		QString time_text = QString::asprintf("%02d:%02d", block.start_min / 60, block.start_min % 60);
 		if(block.duration_min >= 0)
 			time_text += " (" + QString::number(block.duration_min) + " min)";
-		painter.setPen(QColor("#c9dcf0"));
+		painter.setPen(EDIScopeQtTheme::timeline_time);
 		painter.setFont(small_font);
 		painter.drawText(QRectF(text_rect.left(), text_rect.top() + name_metrics.height(), text_rect.width(), small_metrics.height()), Qt::AlignLeft | Qt::AlignTop, time_text);
 		painter.restore();
@@ -202,7 +202,7 @@ EDIScopeQtSPIWindow::EDIScopeQtSPIWindow(QWidget *parent) : QWidget(parent, Qt::
 	xml_view->setReadOnly(true);
 	xml_view->setFont(EDIScopeQtTheme::MonoFont());
 	xml_view->setLineWrapMode(QPlainTextEdit::NoWrap);
-	xml_view->setStyleSheet("QPlainTextEdit { background: #12151a; border: 1px solid #262b32; border-radius: 6px; }");
+	xml_view->setObjectName("xmlView");
 	xml_layout->addWidget(xml_view, 1);
 	tabs->addTab(xml_page, "XML");
 
@@ -349,7 +349,6 @@ QWidget* EDIScopeQtSPIWindow::BuildLogos(const std::vector<SPI_LOGO>& logos, con
 		QFrame *logo_box = new QFrame(box);
 		logo_box->setObjectName("spiLogo");
 		logo_box->setFixedWidth(LOGO_BOX_WIDTH);
-		logo_box->setStyleSheet("QFrame#spiLogo { background: #12151a; border: 1px solid #2b313a; border-radius: 6px; }");
 		QVBoxLayout *logo_layout = new QVBoxLayout(logo_box);
 		logo_layout->setContentsMargins(6, 6, 6, 6);
 		logo_layout->setSpacing(2);
@@ -374,7 +373,7 @@ QWidget* EDIScopeQtSPIWindow::BuildLogos(const std::vector<SPI_LOGO>& logos, con
 		QLabel *caption = new QLabel(QString::fromStdString(FormatLogoCaption(logo, data_size)), logo_box);
 		caption->setAlignment(Qt::AlignCenter);
 		caption->setWordWrap(true);	// e.g. "rectangle" / "112x32" on two lines rather than cut off
-		caption->setStyleSheet("color: #9aa3ad; font-size: 10px; border: none;");
+		EDIScopeQtTheme::SetRole(caption, "small");
 		logo_layout->addWidget(caption);
 
 		grid->addWidget(logo_box, i / logos_per_row, i % logos_per_row);
@@ -394,12 +393,12 @@ QWidget* EDIScopeQtSPIWindow::BuildCard(const std::string& name, const std::stri
 
 	QLabel *name_label = new QLabel(QString::fromStdString(name), card);
 	name_label->setWordWrap(true);
-	name_label->setStyleSheet("font-weight: 700; font-size: 14px; color: #f3f5f7;");
+	EDIScopeQtTheme::SetRole(name_label, "title");
 	layout->addWidget(name_label);
 
 	if(!subtitle.empty()) {
 		QLabel *subtitle_label = new QLabel(QString::fromStdString(subtitle), card);
-		subtitle_label->setStyleSheet("color: #9aa3ad; font-size: 11px;");
+		EDIScopeQtTheme::SetRole(subtitle_label, "note");
 		subtitle_label->setTextInteractionFlags(Qt::TextSelectableByMouse);
 		if(subtitle_mono)
 			subtitle_label->setFont(EDIScopeQtTheme::MonoFont());

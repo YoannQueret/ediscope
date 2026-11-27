@@ -176,7 +176,7 @@ int main(int argc, char **argv) {
 	QGuiApplication::setDesktopFileName("ediscope");	// Wayland app id, matches ediscope.desktop
 
 	QApplication::setOrganizationName("ediscope");	// settings in ~/.config/ediscope/ediscope.conf
-	EDIScopeQtTheme::Apply(app);
+	EDIScopeQtTheme::Apply(app, EDIScopeQtTheme::ThemeFromName(QSettings().value("appearance/theme", "dark").toString()));
 
 	// the recordings folder chosen in Settings, unless given on the command line
 	if(!options.recordings_path_given) {

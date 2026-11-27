@@ -85,7 +85,7 @@ EDIScopeQtLinksWindow::EDIScopeQtLinksWindow(QWidget *parent) :
 	detail_layout->setSpacing(10);
 
 	linking_title = new QLabel(linking_detail);
-	linking_title->setStyleSheet("font-weight: 700; font-size: 14px; color: #f3f5f7;");
+	EDIScopeQtTheme::SetRole(linking_title, "title");
 	linking_title->setWordWrap(true);
 	detail_layout->addWidget(linking_title);
 
@@ -95,7 +95,7 @@ EDIScopeQtLinksWindow::EDIScopeQtLinksWindow(QWidget *parent) :
 	QLabel *lsn_label = new QLabel("Linkage set:", linking_detail);
 	QLabel *flags_label = new QLabel("Properties:", linking_detail);
 	for(QLabel *label : {lsn_label, flags_label})
-		label->setStyleSheet("font-weight: 600; color: #9aa3ad;");
+		EDIScopeQtTheme::SetRole(label, "caption");
 	linking_lsn_value = new QLabel(linking_detail);
 	linking_lsn_value->setFont(EDIScopeQtTheme::MonoFont());
 	linking_lsn_value->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -124,7 +124,7 @@ EDIScopeQtLinksWindow::EDIScopeQtLinksWindow(QWidget *parent) :
 
 		QLabel *scope_label = new QLabel(scope, page);
 		scope_label->setWordWrap(true);
-		scope_label->setStyleSheet("font-weight: 600; color: #9aa3ad;");
+		EDIScopeQtTheme::SetRole(scope_label, "caption");
 		page_layout->addWidget(scope_label);
 
 		stack = new QStackedWidget(page);
@@ -173,7 +173,7 @@ QWidget* EDIScopeQtLinksWindow::CreateEmptyPage(const QString& text, QWidget *pa
 	label->setWordWrap(true);
 	label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
 	label->setContentsMargins(4, 14, 4, 4);
-	label->setStyleSheet("color: #9aa3ad; font-size: 13px;");
+	EDIScopeQtTheme::SetRole(label, "message");
 	return label;
 }
 
