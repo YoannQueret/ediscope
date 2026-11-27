@@ -260,6 +260,9 @@ private:
 	int64_t margin_valid_since_ms = 0;	// 0: no valid margin (yet/anymore)
 	int64_t margin_last_ms = 0;			// the last valid margin received - none for 2 s: it settles again
 	void ShowMarginGraph();
+	// its window - independent (not modal, no Qt parent: it can stay in view, go below the main
+	// window), created the first time, only hidden when closed
+	QWidget *margin_window = nullptr;
 	void ShowEnsembleInfo();
 	QString EnsembleInfoText(QString *label = nullptr);
 

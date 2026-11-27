@@ -271,6 +271,7 @@ EDIScopeQt::~EDIScopeQt() {
 	delete fig_window;
 	delete ann_window;
 	delete mnsc_window;
+	delete margin_window;
 
 	// signal every worker thread to stop up front, before blocking on any single one of them
 	if(ensemble_source)
@@ -2048,12 +2049,19 @@ void EDIScopeQt::ShowEnsembleInfo() {
 
 // --- EDI margin graph -----------------------------------------------------------------
 void EDIScopeQt::ShowMarginGraph() {
-	QDialog dialog(this);
-	dialog.setWindowTitle("EDI margin");
-	dialog.resize(1150, 520);
-	QVBoxLayout *layout = new QVBoxLayout(&dialog);
+	if(margin_window) {
+		margin_window->show();
+		margin_window->raise();
+		margin_window->activateWindow();
+		return;
+	}
 
-	QLabel *stats = new QLabel(&dialog);
+	margin_window = new QWidget(nullptr, Qt::Window);
+	margin_window->setWindowTitle("EDI margin");
+	margin_window->resize(1150, 520);
+	QVBoxLayout *layout = new QVBoxLayout(margin_window);
+
+	QLabel *stats = new QLabel(margin_window);
 	stats->setFont(EDIScopeQtTheme::MonoFont());
 	stats->setTextFormat(Qt::RichText);
 	stats->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -2061,20 +2069,22 @@ void EDIScopeQt::ShowMarginGraph() {
 
 	QLabel *note = new QLabel("How far ahead of its own timestamp each EDI frame arrives (negative: early, as it should be). From now "
 			"(left) to 3 hours ago (right): every value over the last minute, then one average per minute up to 30 minutes ago, "
-			"then one per 5 minutes - each with the band between the minimum and maximum of its period. Recorded since the source started.", &dialog);
+			"then one per 5 minutes - each with the band between the minimum and maximum of its period. Recorded since the source started.", margin_window);
 	note->setWordWrap(true);
 	EDIScopeQtTheme::SetRole(note, "muted");
 	layout->addWidget(note);
 
-	EDIScopeQtMarginGraph *graph = new EDIScopeQtMarginGraph(&dialog);
+	EDIScopeQtMarginGraph *graph = new EDIScopeQtMarginGraph(margin_window);
 	layout->addWidget(graph, 1);
 
-	QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
-	connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+	QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Close, margin_window);
+	connect(buttons, &QDialogButtonBox::rejected, margin_window, &QWidget::hide);
 	layout->addWidget(buttons);
 
-	// real time: refreshed twice a second
+	// real time: refreshed twice a second, while shown
 	auto refresh = [this, graph, stats]() {
+		if(!margin_window->isVisible())
+			return;
 		int64_t now = SteadyNowMs();
 		graph->SetData(margin_history, now, edi_timing_valid, last_edi_timing.margin_delay_ms, last_edi_timing.tist_at_fct0_ms);
 
@@ -2109,13 +2119,13 @@ void EDIScopeQt::ShowMarginGraph() {
 				.arg(kept_min < 60 ? QString("%1 min").arg((int) std::ceil(kept_min)) : QString("%1 h").arg(kept_min / 60, 0, 'f', 1))
 				.arg(ms(min_v)).arg(ms(max_v)));
 	};
-	refresh();
-	QTimer refresh_timer;
-	connect(&refresh_timer, &QTimer::timeout, &dialog, refresh);
-	refresh_timer.start(500);
+	QTimer *refresh_timer = new QTimer(margin_window);
+	connect(refresh_timer, &QTimer::timeout, margin_window, refresh);
+	refresh_timer->start(500);
 
-	EDIScopeQtTheme::CenterOnWindow(&dialog, this);
-	dialog.exec();
+	EDIScopeQtTheme::CenterOnWindow(margin_window, this);	// the first time only - then it stays where left
+	margin_window->show();
+	refresh();
 }
 
 
@@ -2390,6 +2400,8 @@ void EDIScopeQt::closeEvent(QCloseEvent *event) {
 	fig_window->hide();
 	ann_window->hide();
 	mnsc_window->hide();
+	if(margin_window)
+		margin_window->hide();
 	QMetaObject::invokeMethod(qApp, []() {QCoreApplication::exit(0);}, Qt::QueuedConnection);
 }
 
