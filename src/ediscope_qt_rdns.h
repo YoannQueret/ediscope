@@ -103,7 +103,7 @@ protected:
 public:
 	EDIScopeQtRDNSWindow(QWidget *parent);
 
-	// places the window right of the main window - only the first time it is shown
+	// places the window centred on the main window - only the first time it is shown
 	void AlignToParent();
 
 	// replaces the full service list (e.g. on open, or whenever the ensemble's services change) -

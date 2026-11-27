@@ -132,7 +132,7 @@ public:
 	void UpdateOESwitching(uint32_t key, const FIC_OE_ASW_CLUSTER& cluster);
 	void Clear();
 
-	// places the window right of the main window - only the first time it is shown
+	// places the window centred on the main window - only the first time it is shown
 	void AlignToParent();
 
 	// re-colours what was coloured when filled (states, severities), after a theme change

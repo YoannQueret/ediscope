@@ -117,7 +117,7 @@ protected:
 public:
 	EDIScopeQtSPIWindow(QWidget *parent);
 
-	// places the window right of the main window - only the first time it is shown
+	// places the window centred on the main window - only the first time it is shown
 	void AlignToParent();
 
 	void Update(const SPI_SERVICE_INFORMATION& info, const std::map<std::string,std::vector<uint8_t>>& logo_data);

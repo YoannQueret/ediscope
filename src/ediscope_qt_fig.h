@@ -93,7 +93,7 @@ protected:
 public:
 	EDIScopeQtFIGWindow(QWidget *parent, SnapshotProvider snapshot_provider);
 
-	// places the window right of the main window - only the first time it is shown
+	// places the window centred on the main window - only the first time it is shown
 	void AlignToParent();
 
 	// re-colours what was coloured when filled (verdicts, summary), after a theme change

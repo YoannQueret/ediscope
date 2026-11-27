@@ -85,7 +85,7 @@ public:
 	void AddCRCError();
 	void Clear();
 
-	// places the window right of the main window - only the first time it is shown
+	// places the window centred on the main window - only the first time it is shown
 	void AlignToParent();
 
 	// re-colours what was coloured when filled, after a theme change

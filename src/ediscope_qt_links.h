@@ -106,7 +106,7 @@ protected:
 public:
 	EDIScopeQtLinksWindow(QWidget *parent);
 
-	// places the window right of the main window - only the first time it is shown
+	// places the window centred on the main window - only the first time it is shown
 	void AlignToParent();
 
 	void SetEnsembleEid(int eid);

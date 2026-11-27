@@ -34,6 +34,7 @@
 #include <QStandardPaths>
 #include <QHBoxLayout>
 #include <QPalette>
+#include <QScreen>
 #include <QStyleFactory>
 
 
@@ -253,6 +254,24 @@ QLabel[role="error"] { color: @error@; }
 		widget->setProperty("role", role);
 		widget->style()->unpolish(widget);
 		widget->style()->polish(widget);
+	}
+
+	void CenterOnWindow(QWidget *window, QWidget *main_window) {
+		QRect main_frame = main_window->frameGeometry();
+		QScreen *screen = main_window->screen();
+		QRect available = screen ? screen->availableGeometry() : main_frame;
+
+		// the window's own frame (title bar, borders) isn't known before it is first shown: kept
+		// clear of the screen's edges by that much, roughly
+		const int frame_margin = 40;
+		QSize size = window->size().boundedTo(QSize(available.width() - frame_margin, available.height() - frame_margin));
+		window->resize(size);
+
+		QRect rect(QPoint(0, 0), size);
+		rect.moveCenter(main_frame.center());
+		int x = std::max(available.left(), std::min(rect.left(), available.right() - size.width() - frame_margin / 2));
+		int y = std::max(available.top(), std::min(rect.top(), available.bottom() - size.height() - frame_margin));
+		window->move(x, y);
 	}
 
 	void MakeTableCopyable(QTableWidget *table) {

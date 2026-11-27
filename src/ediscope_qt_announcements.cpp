@@ -253,8 +253,7 @@ void EDIScopeQtAnnouncementsWindow::AlignToParent() {
 		return;
 	positioned = true;
 
-	QRect parent_frame = main_window->frameGeometry();
-	move(parent_frame.right() + 20, parent_frame.top());
+	EDIScopeQtTheme::CenterOnWindow(this, main_window);
 }
 
 QString EDIScopeQtAnnouncementsWindow::TypesString(uint16_t flags) {

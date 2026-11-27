@@ -95,6 +95,10 @@ namespace EDIScopeQtTheme {
 
 	// right-click on a table: "Copy" (the cell) and "Copy row" (tab-separated)
 	void MakeTableCopyable(QTableWidget *table);
+
+	// centres a (tool) window on the main window, kept within the screen's available area (and
+	// shrunk to it, if larger) - so it opens in view even on a small screen
+	void CenterOnWindow(QWidget *window, QWidget *main_window);
 }
 
 
