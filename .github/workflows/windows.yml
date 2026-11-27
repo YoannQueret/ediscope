@@ -6,7 +6,6 @@ name: Windows build
 on:
   push:
     tags: ['*']
-    branches: [windows]
   workflow_dispatch:
 
 permissions:
