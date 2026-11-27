@@ -78,10 +78,6 @@ etc.).
   *streams* - from the network or from a file - not on demodulating DAB
   off the air itself.
 
-* **Desktop integration.** Its own icon embedded in the binary and a
-  `.desktop` entry so it shows up correctly in a taskbar, dock or
-  Alt-Tab switcher.
-
 
 ## Requirements
 
