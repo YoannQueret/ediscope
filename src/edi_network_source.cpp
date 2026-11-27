@@ -48,7 +48,7 @@ void EDITCPSource::Init() {
 	struct addrinfo *res = nullptr;
 	int gai_result = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res);
 	if(gai_result) {
-		fprintf(stderr, "EDITCPSource: error resolving '%s': %s\n", host.c_str(), gai_strerror(gai_result));
+		fprintf(stderr, "EDITCPSource: error resolving '%s': %s\n", host.c_str(), gai_strerrorA(gai_result));
 		return;
 	}
 

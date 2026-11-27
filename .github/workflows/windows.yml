@@ -19,6 +19,11 @@ jobs:
         shell: msys2 {0}
 
     steps:
+      # no CRLF conversion: MSYS2's git would otherwise see every file as modified ("-dirty" version)
+      - name: Keep line endings
+        shell: pwsh
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # the whole history and the tags, for the version (git describe)

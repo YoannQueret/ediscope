@@ -188,7 +188,8 @@ int RadioDNSResolver::ConnectTCP(const std::string& host, int port, std::string&
 	struct addrinfo *addr_res = nullptr;
 	int gai_err = getaddrinfo(host.c_str(), port_str, &hints, &addr_res);
 	if(gai_err != 0) {
-		error = std::string("can't resolve host '") + host + "': " + gai_strerror(gai_err);
+		// gai_strerrorA(): gai_strerror() returns wide characters with UNICODE (set by Qt)
+		error = std::string("can't resolve host '") + host + "': " + gai_strerrorA(gai_err);
 		return -1;
 	}
 
