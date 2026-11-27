@@ -56,6 +56,9 @@ public:
 		std::string label;
 	};
 private:
+	// the main window: not the Qt parent, so that this window can go below it, and be
+	// maximised/minimised on its own
+	QWidget *main_window;
 	QStackedWidget *main_stack;	// "no service yet" message, or the list + detail
 	QTableWidget *services_list;
 	std::vector<SERVICE_ENTRY> services;

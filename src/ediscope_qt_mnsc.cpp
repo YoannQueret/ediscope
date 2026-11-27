@@ -77,7 +77,8 @@ static QString Time(const QDateTime& time) {
 
 // --- EDIScopeQtMNSCWindow -----------------------------------------------------------------
 EDIScopeQtMNSCWindow::EDIScopeQtMNSCWindow(QWidget *parent) :
-		QWidget(parent, Qt::Tool), changes_serial(1), changes_shown_serial(0), messages(0), crc_errors(0), dirty(true), positioned(false) {
+		QWidget(nullptr, Qt::Window), changes_serial(1), changes_shown_serial(0), messages(0), crc_errors(0), dirty(true), positioned(false) {
+	main_window = parent;
 	setWindowTitle("MNSC");
 	resize(1080, 680);
 
@@ -150,7 +151,7 @@ EDIScopeQtMNSCWindow::EDIScopeQtMNSCWindow(QWidget *parent) :
 
 void EDIScopeQtMNSCWindow::closeEvent(QCloseEvent *event) {
 	// the application is quitting (the main window is gone): let it close for real
-	if(!parentWidget() || !parentWidget()->isVisible()) {
+	if(!main_window || !main_window->isVisible()) {
 		event->accept();
 		return;
 	}
@@ -173,11 +174,11 @@ void EDIScopeQtMNSCWindow::hideEvent(QHideEvent *event) {
 }
 
 void EDIScopeQtMNSCWindow::AlignToParent() {
-	if(positioned || !parentWidget())
+	if(positioned || !main_window)
 		return;
 	positioned = true;
 
-	QRect parent_frame = parentWidget()->window()->frameGeometry();
+	QRect parent_frame = main_window->frameGeometry();
 	move(parent_frame.right() + 20, parent_frame.top());
 }
 

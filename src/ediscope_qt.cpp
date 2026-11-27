@@ -227,6 +227,14 @@ EDIScopeQt::EDIScopeQt(EDIScopeQtOptions options) :
 EDIScopeQt::~EDIScopeQt() {
 	qApp->removeEventFilter(this);
 
+	// the tool windows have no Qt parent (so that they can go below this one): deleted here
+	delete links_window;
+	delete rdns_window;
+	delete spi_window;
+	delete fig_window;
+	delete ann_window;
+	delete mnsc_window;
+
 	// signal every worker thread to stop up front, before blocking on any single one of them
 	if(ensemble_source)
 		ensemble_source->DoExit();
@@ -657,10 +665,10 @@ std::string EDIScopeQt::ServiceDetailCellText(const LISTED_SERVICE& service, int
 		std::string label = FICDecoder::ConvertLabelToUTF8(service.label, nullptr);
 		text = FICDecoder::DeriveShortLabelUTF8(label, service.label.short_label_mask);
 		break; }
-	case EDIScopeQtServicesModel::COL_CUS:	// number of CUs, then their position
+	case EDIScopeQtServicesModel::COL_CUS:	// first-last CU used, then the number of CUs
 		if(!service.subchannel.IsNone() && !service.subchannel.pl.empty())
-			text = std::to_string(service.subchannel.size) +
-					" (" + std::to_string(service.subchannel.start) + "-" + std::to_string(service.subchannel.start + service.subchannel.size) + ")";
+			text = std::to_string(service.subchannel.start) + "-" + std::to_string(service.subchannel.start + service.subchannel.size - 1) +
+					" (" + std::to_string(service.subchannel.size) + ")";
 		break;
 	case EDIScopeQtServicesModel::COL_PROTECTION:
 		text = service.subchannel.pl;
@@ -753,15 +761,15 @@ int EDIScopeQt::ServicesTableColumnCompare(const LISTED_SERVICE& sa, const LISTE
 		return sa.sid - sb.sid;
 	case EDIScopeQtServicesModel::COL_ECC:	// ecc_none (-1) sorts before every real ECC
 		return sa.ecc - sb.ecc;
-	case EDIScopeQtServicesModel::COL_CUS: {	// by number of CUs (shown first), then position; unknown sorts last
+	case EDIScopeQtServicesModel::COL_CUS: {	// by position (shown first), then number of CUs; unknown sorts last
 		bool ka = !sa.subchannel.IsNone() && !sa.subchannel.pl.empty();
 		bool kb = !sb.subchannel.IsNone() && !sb.subchannel.pl.empty();
-		int va = ka ? sa.subchannel.size : INT_MAX;
-		int vb = kb ? sb.subchannel.size : INT_MAX;
+		int va = ka ? sa.subchannel.start : INT_MAX;
+		int vb = kb ? sb.subchannel.start : INT_MAX;
 		if(va != vb)
 			return va < vb ? -1 : 1;
-		va = ka ? sa.subchannel.start : INT_MAX;
-		vb = kb ? sb.subchannel.start : INT_MAX;
+		va = ka ? sa.subchannel.size : INT_MAX;
+		vb = kb ? sb.subchannel.size : INT_MAX;
 		return va < vb ? -1 : (va > vb ? 1 : 0); }
 	case EDIScopeQtServicesModel::COL_BITRATE: {	// unknown sorts last
 		int va = (!sa.subchannel.IsNone() && !sa.subchannel.pl.empty()) ? sa.subchannel.bitrate : INT_MAX;

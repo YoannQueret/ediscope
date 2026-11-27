@@ -328,13 +328,22 @@ void EDIScopeQtCorrelationMeter::paintEvent(QPaintEvent* /*event*/) {
 static const int SPECTRUM_SCALE_WIDTH = 32;
 static const int SPECTRUM_FREQ_SCALE_HEIGHT = BOTTOM_MARGIN;
 static const int SPECTRUM_PLOT_MARGIN_RIGHT = 4;
-static const int SPECTRUM_NUM_BARS = 48;
+// the number of bars follows the width: the most of these (each dividing the analyzer's band count
+// evenly) that keeps every bar at least SPECTRUM_MIN_BAR_STEP pixels wide - 48 at the least
+static constexpr int SPECTRUM_BAR_COUNTS[] = {48, 64, 96, 128, 192, 384};
+static const double SPECTRUM_MIN_BAR_STEP = 7.0;
 static const int SPECTRUM_BAR_GAP = 1;
 
 constexpr double EDIScopeQtSpectrum::min_dbfs;
 constexpr double EDIScopeQtSpectrum::max_dbfs;
 
-static_assert(AudioSpectrumAnalyzer::num_bands % SPECTRUM_NUM_BARS == 0, "SPECTRUM_NUM_BARS must evenly divide the analyzer's band count");
+static constexpr bool BarCountsDivideBands() {
+	for(int count : SPECTRUM_BAR_COUNTS)
+		if(AudioSpectrumAnalyzer::num_bands % count)
+			return false;
+	return true;
+}
+static_assert(BarCountsDivideBands(), "every SPECTRUM_BAR_COUNTS entry must evenly divide the analyzer's band count");
 
 EDIScopeQtSpectrum::EDIScopeQtSpectrum(QWidget *parent) : QWidget(parent), has_data(false), display_mode(DisplayMode::Bar) {
 	setMinimumSize(SPECTRUM_SCALE_WIDTH + 400, 200);
@@ -524,8 +533,12 @@ void EDIScopeQtSpectrum::DrawChannelBar(QPainter& painter, size_t ch, double x, 
 		return;
 
 	size_t num_bands = bands_db[ch].size();
-	size_t group_size = num_bands / SPECTRUM_NUM_BARS;
-	double bar_step = width / SPECTRUM_NUM_BARS;
+	int num_bars = SPECTRUM_BAR_COUNTS[0];
+	for(int count : SPECTRUM_BAR_COUNTS)
+		if(width / count >= SPECTRUM_MIN_BAR_STEP && (size_t) count <= num_bands)
+			num_bars = count;
+	size_t group_size = num_bands / num_bars;
+	double bar_step = width / num_bars;
 	double bar_width = std::max(1.0, bar_step - SPECTRUM_BAR_GAP);
 
 	auto y_for = [&](double dbfs) {
@@ -543,7 +556,7 @@ void EDIScopeQtSpectrum::DrawChannelBar(QPainter& painter, size_t ch, double x, 
 
 	double area_top = grow_upward ? baseline_y - height : baseline_y;
 
-	for(int i = 0; i < SPECTRUM_NUM_BARS; i++) {
+	for(int i = 0; i < num_bars; i++) {
 		double bar_x = x + i * bar_step;
 
 		double value = min_dbfs;

@@ -87,7 +87,8 @@ static QLabel* CreateTitle(QWidget *parent) {
 
 
 // --- EDIScopeQtRDNSWindow -----------------------------------------------------------------
-EDIScopeQtRDNSWindow::EDIScopeQtRDNSWindow(QWidget *parent) : QWidget(parent, Qt::Tool), popup_item(nullptr), positioned(false) {
+EDIScopeQtRDNSWindow::EDIScopeQtRDNSWindow(QWidget *parent) : QWidget(nullptr, Qt::Window), popup_item(nullptr), positioned(false) {
+	main_window = parent;
 	setWindowTitle("RadioDNS");
 	resize(900, 560);
 
@@ -352,7 +353,7 @@ bool EDIScopeQtRDNSWindow::eventFilter(QObject *watched, QEvent *event) {
 
 void EDIScopeQtRDNSWindow::closeEvent(QCloseEvent *event) {
 	// the application is quitting (the main window is gone): let it close for real
-	if(!parentWidget() || !parentWidget()->isVisible()) {
+	if(!main_window || !main_window->isVisible()) {
 		event->accept();
 		return;
 	}
@@ -366,11 +367,11 @@ void EDIScopeQtRDNSWindow::closeEvent(QCloseEvent *event) {
 
 void EDIScopeQtRDNSWindow::AlignToParent() {
 	// only once, the first time the window is shown - afterwards it stays wherever the user left it
-	if(positioned || !parentWidget())
+	if(positioned || !main_window)
 		return;
 	positioned = true;
 
-	QRect parent_frame = parentWidget()->window()->frameGeometry();
+	QRect parent_frame = main_window->frameGeometry();
 	move(parent_frame.right() + 20, parent_frame.top());
 }
 

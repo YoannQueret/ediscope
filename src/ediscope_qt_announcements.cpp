@@ -113,7 +113,8 @@ static QString Time(const QDateTime& time) {
 
 // --- EDIScopeQtAnnouncementsWindow -----------------------------------------------------------------
 EDIScopeQtAnnouncementsWindow::EDIScopeQtAnnouncementsWindow(QWidget *parent) :
-		QWidget(parent, Qt::Tool), ensemble_known(false), history_serial(1), history_shown_serial(0), positioned(false) {
+		QWidget(nullptr, Qt::Window), ensemble_known(false), history_serial(1), history_shown_serial(0), positioned(false) {
+	main_window = parent;
 	setWindowTitle("Announcements");
 	resize(1100, 680);
 
@@ -231,7 +232,7 @@ EDIScopeQtAnnouncementsWindow::EDIScopeQtAnnouncementsWindow(QWidget *parent) :
 
 void EDIScopeQtAnnouncementsWindow::closeEvent(QCloseEvent *event) {
 	// the application is quitting (the main window is gone): let it close for real
-	if(!parentWidget() || !parentWidget()->isVisible()) {
+	if(!main_window || !main_window->isVisible()) {
 		event->accept();
 		return;
 	}
@@ -248,11 +249,11 @@ void EDIScopeQtAnnouncementsWindow::showEvent(QShowEvent *event) {
 }
 
 void EDIScopeQtAnnouncementsWindow::AlignToParent() {
-	if(positioned || !parentWidget())
+	if(positioned || !main_window)
 		return;
 	positioned = true;
 
-	QRect parent_frame = parentWidget()->window()->frameGeometry();
+	QRect parent_frame = main_window->frameGeometry();
 	move(parent_frame.right() + 20, parent_frame.top());
 }
 

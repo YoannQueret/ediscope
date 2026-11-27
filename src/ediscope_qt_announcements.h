@@ -53,6 +53,9 @@ public:
 
 	enum class Severity {INFO, WARNING, ERROR};
 private:
+	// the main window: not the Qt parent, so that this window can go below it, and be
+	// maximised/minimised on its own
+	QWidget *main_window;
 	struct EVENT {
 		QDateTime time;
 		QString fig;

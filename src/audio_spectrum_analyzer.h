@@ -50,7 +50,7 @@ private:
 	std::vector<size_t> band_bin_lo, band_bin_hi;	// [num_bands]; FFT bin range covered by each band, for cached_samplerate
 	void UpdateBandRanges(int samplerate);
 public:
-	static constexpr size_t num_bands = 192;
+	static constexpr size_t num_bands = 384;
 	static constexpr double min_freq = 20.0;
 	static constexpr double max_freq = 20000.0;
 

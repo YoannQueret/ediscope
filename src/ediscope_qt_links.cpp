@@ -38,9 +38,10 @@
 
 // --- EDIScopeQtLinksWindow -----------------------------------------------------------------
 EDIScopeQtLinksWindow::EDIScopeQtLinksWindow(QWidget *parent) :
-		QWidget(parent, Qt::Tool),
+		QWidget(nullptr, Qt::Window),
 		ensemble_eid(-1),
 		positioned(false) {
+	main_window = parent;
 	setWindowTitle("Links");
 	resize(900, 520);
 
@@ -188,7 +189,7 @@ void EDIScopeQtLinksWindow::SetCell(QTableWidget *table, int row, int column, co
 
 void EDIScopeQtLinksWindow::closeEvent(QCloseEvent *event) {
 	// the application is quitting (the main window is gone): let it close for real
-	if(!parentWidget() || !parentWidget()->isVisible()) {
+	if(!main_window || !main_window->isVisible()) {
 		event->accept();
 		return;
 	}
@@ -202,11 +203,11 @@ void EDIScopeQtLinksWindow::closeEvent(QCloseEvent *event) {
 void EDIScopeQtLinksWindow::AlignToParent() {
 	// only once, the first time the window is shown - afterwards it stays wherever the user left
 	// it, it doesn't follow the main window around
-	if(positioned || !parentWidget())
+	if(positioned || !main_window)
 		return;
 	positioned = true;
 
-	QRect parent_frame = parentWidget()->window()->frameGeometry();
+	QRect parent_frame = main_window->frameGeometry();
 	move(parent_frame.right() + 20, parent_frame.top());
 }
 

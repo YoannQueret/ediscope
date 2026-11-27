@@ -59,6 +59,9 @@ class EDIScopeQtFIGWindow : public QWidget {
 public:
 	typedef std::function<FIG_ANALYSIS_SNAPSHOT()> SnapshotProvider;
 private:
+	// the main window: not the Qt parent, so that this window can go below it, and be
+	// maximised/minimised on its own
+	QWidget *main_window;
 	SnapshotProvider snapshot_provider;
 	FIG_ANALYSIS_SNAPSHOT snapshot;
 	QTimer refresh_timer;

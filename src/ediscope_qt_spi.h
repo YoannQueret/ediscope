@@ -67,6 +67,9 @@ public:
 class EDIScopeQtSPIWindow : public QWidget {
 	Q_OBJECT
 private:
+	// the main window: not the Qt parent, so that this window can go below it, and be
+	// maximised/minimised on its own
+	QWidget *main_window;
 	static const int cards_per_row = 4;
 	static const int logos_per_row = 3;	// leaves each logo room for its caption
 

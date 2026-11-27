@@ -39,6 +39,9 @@
 class EDIScopeQtMNSCWindow : public QWidget {
 	Q_OBJECT
 private:
+	// the main window: not the Qt parent, so that this window can go below it, and be
+	// maximised/minimised on its own
+	QWidget *main_window;
 	struct ENTRY {
 		MNSC_TSC tsc;
 		unsigned long messages;

@@ -158,7 +158,8 @@ void EDIScopeQtFIGHistogram::paintEvent(QPaintEvent* /*event*/) {
 
 // --- EDIScopeQtFIGWindow -----------------------------------------------------------------
 EDIScopeQtFIGWindow::EDIScopeQtFIGWindow(QWidget *parent, SnapshotProvider snapshot_provider) :
-		QWidget(parent, Qt::Tool), snapshot_provider(snapshot_provider), positioned(false) {
+		QWidget(nullptr, Qt::Window), snapshot_provider(snapshot_provider), positioned(false) {
+	main_window = parent;
 	setWindowTitle("FIG Analysis");
 	resize(1100, 760);
 
@@ -267,7 +268,7 @@ EDIScopeQtFIGWindow::EDIScopeQtFIGWindow(QWidget *parent, SnapshotProvider snaps
 
 void EDIScopeQtFIGWindow::closeEvent(QCloseEvent *event) {
 	// the application is quitting (the main window is gone): let it close for real
-	if(!parentWidget() || !parentWidget()->isVisible()) {
+	if(!main_window || !main_window->isVisible()) {
 		event->accept();
 		return;
 	}
@@ -290,11 +291,11 @@ void EDIScopeQtFIGWindow::hideEvent(QHideEvent *event) {
 }
 
 void EDIScopeQtFIGWindow::AlignToParent() {
-	if(positioned || !parentWidget())
+	if(positioned || !main_window)
 		return;
 	positioned = true;
 
-	QRect parent_frame = parentWidget()->window()->frameGeometry();
+	QRect parent_frame = main_window->frameGeometry();
 	move(parent_frame.right() + 20, parent_frame.top());
 }
 

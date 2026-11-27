@@ -141,7 +141,8 @@ void EDIScopeQtSPITimeline::paintEvent(QPaintEvent* /*event*/) {
 
 
 // --- EDIScopeQtSPIWindow -----------------------------------------------------------------
-EDIScopeQtSPIWindow::EDIScopeQtSPIWindow(QWidget *parent) : QWidget(parent, Qt::Tool), positioned(false) {
+EDIScopeQtSPIWindow::EDIScopeQtSPIWindow(QWidget *parent) : QWidget(nullptr, Qt::Window), positioned(false) {
+	main_window = parent;
 	setWindowTitle("SPI / EPG");
 
 	QVBoxLayout *layout = new QVBoxLayout(this);
@@ -217,7 +218,7 @@ EDIScopeQtSPIWindow::EDIScopeQtSPIWindow(QWidget *parent) : QWidget(parent, Qt::
 
 void EDIScopeQtSPIWindow::closeEvent(QCloseEvent *event) {
 	// the application is quitting (the main window is gone): let it close for real
-	if(!parentWidget() || !parentWidget()->isVisible()) {
+	if(!main_window || !main_window->isVisible()) {
 		event->accept();
 		return;
 	}
@@ -231,11 +232,11 @@ void EDIScopeQtSPIWindow::closeEvent(QCloseEvent *event) {
 
 void EDIScopeQtSPIWindow::AlignToParent() {
 	// only once, the first time the window is shown - afterwards it stays wherever the user left it
-	if(positioned || !parentWidget())
+	if(positioned || !main_window)
 		return;
 	positioned = true;
 
-	QRect parent_frame = parentWidget()->window()->frameGeometry();
+	QRect parent_frame = main_window->frameGeometry();
 	move(parent_frame.right() + 20, parent_frame.top());
 }
 
