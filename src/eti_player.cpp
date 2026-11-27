@@ -29,8 +29,9 @@ void ETIPlayer::DecodeFrame(const uint8_t *eti_frame) {
 	}
 	prev_fsync = fsync;
 
-	// ERR
-	if(eti_frame[0] != 0xFF) {
+	// ERR - error level 0 (0xFF) or 1 (0xF0: errors that can be ignored), as EDIPlayer accepts
+	// for the EDI STAT (which ERR is recorded from, when an EDI source is recorded as ETI)
+	if(eti_frame[0] != 0xFF && eti_frame[0] != 0xF0) {
 		fprintf(stderr, "ETIPlayer: ignored ETI frame with ERR = 0x%02X\n", eti_frame[0]);
 		return;
 	}

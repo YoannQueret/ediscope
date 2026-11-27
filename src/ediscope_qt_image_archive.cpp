@@ -154,25 +154,31 @@ void EDIScopeQtImageArchive::SaveLogo(Kind kind, int eid, uint32_t sid, const st
 	QString key = folder + "|" + name + "|" + QString::number(Hash(data));
 	if(known.count(key))
 		return;
-	known.insert(key);
 
-	// already saved - under its own name, or as a timestamped version of it ("<name> (<time>).<ext>")
+	// already saved - under its own name, or as a timestamped version of it ("<name> (<time>).<ext>");
+	// names compared as such (not as a wildcard pattern, where e.g. "[" would be special)
 	QFileInfo name_info(name);
 	QString stem = name_info.completeBaseName();
 	QString suffix = name_info.suffix().isEmpty() ? QString() : "." + name_info.suffix();
-	QDir dir(folder);
 	QByteArray content((const char*) data.data(), (int) data.size());
-	for(const QFileInfo& existing : dir.entryInfoList({stem + suffix, stem + " (*)" + suffix}, QDir::Files)) {
-		if(existing.size() != (qint64) data.size())
+	for(const QFileInfo& existing : QDir(folder).entryInfoList(QDir::Files)) {
+		QString existing_name = existing.fileName();
+		bool version = existing_name == name || (existing_name.startsWith(stem + " (") && existing_name.endsWith(")" + suffix));
+		if(!version || existing.size() != (qint64) data.size())
 			continue;
 		QFile file(existing.absoluteFilePath());
-		if(file.open(QIODevice::ReadOnly) && file.readAll() == content)
+		if(file.open(QIODevice::ReadOnly) && file.readAll() == content) {
+			known.insert(key);
 			return;
+		}
 	}
 
 	QDir().mkpath(folder);
 	QString filename = folder + "/" + name;
 	if(QFileInfo::exists(filename))
 		filename = folder + "/" + stem + " (" + Timestamp() + ")" + suffix;
-	WriteFile(filename, data);
+	// remembered only once written - a failed write (e.g. the folder not available yet) is retried
+	// the next time this logo is received
+	if(WriteFile(filename, data))
+		known.insert(key);
 }

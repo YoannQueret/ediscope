@@ -129,6 +129,22 @@ void FICDecoder::ProcessFIG0(const uint8_t *data, size_t len) {
 		return;
 	}
 
+	// FIG 0/19, 0/25 and 0/26 (announcements): C/N and OE are Rfu (ETSI EN 300 401 clauses
+	// 8.1.6.2 to 8.1.6.4) - not to be relied on, so not filtered on either, as by FIGAnalyzer
+	if(!header.pd) {
+		switch(header.extension) {
+		case 19:
+			ProcessFIG0_19(data, len);
+			return;
+		case 25:
+			ProcessFIG0_25(data, len);
+			return;
+		case 26:
+			ProcessFIG0_26(data, len);
+			return;
+		}
+	}
+
 	// ignore next config/other ensembles
 	if(header.cn || header.oe)
 		return;
@@ -186,15 +202,6 @@ void FICDecoder::ProcessFIG0(const uint8_t *data, size_t len) {
 		break;
 	case 18:
 		ProcessFIG0_18(data, len);
-		break;
-	case 19:
-		ProcessFIG0_19(data, len);
-		break;
-	case 25:
-		ProcessFIG0_25(data, len);
-		break;
-	case 26:
-		ProcessFIG0_26(data, len);
 		break;
 //	default:
 //		fprintf(stderr, "FICDecoder: received unsupported FIG 0/%d with %zu field bytes\n", header.extension, len);
@@ -1014,8 +1021,10 @@ void FICDecoder::CheckAnnouncementTimeouts() {
 		if(ac.IsActive() && now - ac.last_seen > announcement_timeout) {
 			ac.lost = true;
 			ensemble_changed = true;
-			fprintf(stderr, "FICDecoder: ASw cluster 0x%02X: no longer signalled, without end of announcement\n", kv.first);
-			Log("ASw cluster " + StringTools::IntToHex(kv.first, 2) + ": no longer signalled, without end of announcement");
+			if(!disable_dyn_msgs) {
+				fprintf(stderr, "FICDecoder: ASw cluster 0x%02X: no longer signalled, without end of announcement\n", kv.first);
+				Log("ASw cluster " + StringTools::IntToHex(kv.first, 2) + ": no longer signalled, without end of announcement");
+			}
 
 			for(const fic_services_t::value_type& service : services)
 				if(service.second.cids.find(kv.first) != service.second.cids.cend())
@@ -1029,8 +1038,10 @@ void FICDecoder::CheckAnnouncementTimeouts() {
 		FIC_OE_ASW_CLUSTER& ac = kv.second;
 		if(ac.IsActive() && now - ac.last_seen > announcement_timeout) {
 			ac.lost = true;
-			fprintf(stderr, "FICDecoder: OE ASw cluster 0x%02X: no longer signalled, without end of announcement\n", ac.oe_cid);
-			Log("OE ASw cluster " + StringTools::IntToHex(ac.oe_cid, 2) + ": no longer signalled, without end of announcement");
+			if(!disable_dyn_msgs) {
+				fprintf(stderr, "FICDecoder: OE ASw cluster 0x%02X: no longer signalled, without end of announcement\n", ac.oe_cid);
+				Log("OE ASw cluster " + StringTools::IntToHex(ac.oe_cid, 2) + ": no longer signalled, without end of announcement");
+			}
 			observer->FICChangeOEAnnouncementSwitching(kv.first, ac);
 		}
 	}

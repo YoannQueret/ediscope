@@ -235,6 +235,7 @@ private:
 
 	// saving of every image received (slides, SPI and RadioDNS logos), as set in the settings
 	EDIScopeQtImageArchive image_archive;
+	std::atomic<int> slide_service_sid{LISTED_SERVICE::sid_none};	// SId of the service the slides come from
 	void ArchiveSPILogos();
 	void ArchiveRDNSLogos(int eid, int sid, const RDNS_RESULT& result);
 
@@ -365,7 +366,7 @@ private:
 	// source handling
 	void StartSource(EnsembleSource *source, const QString& uri);
 	void StopEnsembleSource();
-	void ShowEnsembleWaitingMessage();
+	void ShowEnsembleWaitingMessage(bool file);	// file: no timestamps to wait for
 	void OnConnectToggled(bool checked);
 	void OnUriActivated(int index);
 	void OpenFile();

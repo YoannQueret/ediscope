@@ -253,7 +253,7 @@ EDIScopeQt::EDIScopeQt(EDIScopeQtOptions options) :
 		ensemble_player->SetIgnoreTimestamps(!options.filename.empty() || stdin_is_file);
 		StartSource(source, QString::fromStdString(options.filename.empty() ? "stdin" : options.filename));
 		if(this->options.source_format == EnsembleSource::FORMAT_EDI)
-			ShowEnsembleWaitingMessage();
+			ShowEnsembleWaitingMessage(!options.filename.empty() || stdin_is_file);
 	}
 }
 
@@ -939,6 +939,7 @@ void EDIScopeQt::SetService(const LISTED_SERVICE& service) {
 		if(options.rec_prebuffer_size_s > 0)
 			ensemble_player->RemoveUntouchedStreamConsumer(this);
 		ensemble_player->SetAudioService(AUDIO_SERVICE());
+		slide_service_sid = LISTED_SERVICE::sid_none;
 
 		pad_decoder->Reset();
 
@@ -971,6 +972,7 @@ void EDIScopeQt::SetService(const LISTED_SERVICE& service) {
 
 		// start playback of new service
 		ensemble_player->SetAudioService(service.audio_service);
+		slide_service_sid = service.sid;	// set once playing it: a slide still on its way belongs to the previous one
 		if(options.rec_prebuffer_size_s > 0)
 			ensemble_player->AddUntouchedStreamConsumer(this);
 	}
@@ -1143,7 +1145,16 @@ void EDIScopeQt::EnsureEnsemblePlayer(const std::string& format) {
 	ensemble_player->SetAudioVolume(slider_volume->value() / 100.0);
 }
 
-void EDIScopeQt::ShowEnsembleWaitingMessage() {
+void EDIScopeQt::ShowEnsembleWaitingMessage(bool file) {
+	// a file is played at a fixed pace, regardless of its timestamps: nothing else to wait for
+	if(file) {
+		status_ensemble->setText(ColoredText("<i>Waiting for the ensemble...</i>", EDIScopeQtTheme::text_muted));
+		status_ensemble->setToolTip(QString());
+		panel_services->SetTitle("Services — waiting for the ensemble...");
+		panel_services->setProperty("waiting", true);
+		return;
+	}
+
 	// an EDI source's frames are only actually decoded once their own embedded timestamp comes
 	// due (see EDIPlayer) - with a mux configured for a large TIST offset, that can hold back the
 	// first FIG 0/0 (ensemble label) for that many seconds after the connection itself succeeded
@@ -1268,12 +1279,9 @@ void EDIScopeQt::OpenFile() {
 	if(filename.isEmpty())
 		return;
 
-#ifdef _WIN32
-	// "file:///C:/dir/file" - "file://" + "C:/dir/file" would read as a host "C:"
+	// a proper file URI: "%" percent-encoded (it is decoded again by FilePathFromArg), and
+	// "file:///C:/dir/file" on Windows - "file://" + "C:/dir/file" would read as a host "C:"
 	combo_uri->lineEdit()->setText(QUrl::fromLocalFile(filename).toString());
-#else
-	combo_uri->lineEdit()->setText("file://" + filename);
-#endif
 
 	// same as pressing Enter in the URI box - start right away (restart, if already connected)
 	if(btn_connect->isChecked())
@@ -1310,7 +1318,7 @@ void EDIScopeQt::OnConnectToggled(bool checked) {
 		StopEnsembleSource();
 		EnsureEnsemblePlayer(is_edi ? EnsembleSource::FORMAT_EDI : EnsembleSource::FORMAT_ETI);
 		if(is_edi)
-			ShowEnsembleWaitingMessage();
+			ShowEnsembleWaitingMessage(true);
 
 		ensemble_player->SetIgnoreTimestamps(true);	// a file: fixed 24 ms pace (see EDIPlayer)
 		if(is_edi)
@@ -1366,7 +1374,7 @@ void EDIScopeQt::OnConnectToggled(bool checked) {
 	// take over from whatever was running before (e.g. the initial command line source)
 	StopEnsembleSource();
 	EnsureEnsemblePlayer(EnsembleSource::FORMAT_EDI);
-	ShowEnsembleWaitingMessage();
+	ShowEnsembleWaitingMessage(false);
 
 	ensemble_player->SetIgnoreTimestamps(false);
 	history_pending_uri = uri;	// see EnsembleProcessFrame
@@ -1534,6 +1542,9 @@ void EDIScopeQt::StopRecording() {
 		}
 		filename = mux_rec_filename;
 		duration_ms = (long int) mux_rec_frames * 24;	// an ETI/EDI frame is 24 ms
+		// only for this (ensemble) recording - the counter is reset when the next one starts
+		if(mux_rec_convert_errors)
+			recording_type += QString(" - %1 EDI packet(s) could not be converted").arg(mux_rec_convert_errors);
 	}
 	fprintf(stderr, "EDIScopeQt: recording stopped\n");
 
@@ -1544,8 +1555,6 @@ void EDIScopeQt::StopRecording() {
 		UpdateRecStatus(true);
 	}
 
-	if(mux_rec_convert_errors)
-		recording_type += QString(" - %1 EDI packet(s) could not be converted").arg(mux_rec_convert_errors);
 	ShowRecordingSummary(QString::fromStdString(filename), duration_ms);
 }
 
@@ -2762,12 +2771,13 @@ void EDIScopeQt::PADChangeDynamicLabel(const DL_STATE& dl) {
 }
 
 void EDIScopeQt::PADChangeSlide(const MOT_FILE& slide) {
-	PostFromEngine([this, slide]() {
+	// the service this slide comes from, as known here (on the player thread) - not the one
+	// selected by the time it reaches the UI thread
+	int sid = slide_service_sid;
+	PostFromEngine([this, slide, sid]() {
 		slideshow->UpdateSlide(slide);
-		// the slide of the service played
-		LISTED_SERVICE service;
-		if(GetSelectedService(service) && !ensemble.IsNone())
-			image_archive.SaveSlide(ensemble.eid, (uint32_t) service.sid, slide);
+		if(sid != LISTED_SERVICE::sid_none && !ensemble.IsNone())
+			image_archive.SaveSlide(ensemble.eid, (uint32_t) sid, slide);
 	});
 }
 
