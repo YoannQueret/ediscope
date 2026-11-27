@@ -243,6 +243,11 @@ void EnsemblePlayer::ProcessFIC(const uint8_t *data, size_t len) {
 		observer->EnsembleProcessFIC(data, len);
 }
 
+void EnsemblePlayer::ProcessMNSC(int fp, const uint8_t *mnsc) {
+	if(reporting_enabled && observer)
+		observer->EnsembleProcessMNSC(fp, mnsc);
+}
+
 void EnsemblePlayer::ProcessPAD(const uint8_t *xpad_data, size_t xpad_len, bool exact_xpad_len, const uint8_t *fpad_data) {
 //	fprintf(stderr, "Received %zu bytes X-PAD\n", xpad_len);
 	if(reporting_enabled && observer)

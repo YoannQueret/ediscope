@@ -31,6 +31,7 @@ list(APPEND ediscope_sources
     ecc_countries.cpp
     fig_analyzer.cpp
     edi_to_eti.cpp
+    mnsc_decoder.cpp
     )
 
 set(ediscope_qt_sources
@@ -47,6 +48,7 @@ set(ediscope_qt_sources
     ediscope_qt_spi.cpp
     ediscope_qt_fig.cpp
     ediscope_qt_announcements.cpp
+    ediscope_qt_mnsc.cpp
     )
 
 # resolv: res_query()/ns_*() used by radiodns.cpp for raw CNAME/SRV DNS record lookups

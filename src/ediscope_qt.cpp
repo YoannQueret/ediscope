@@ -184,6 +184,7 @@ EDIScopeQt::EDIScopeQt(EDIScopeQtOptions options) :
 
 	fic_decoder = new FICDecoder(this, options.disable_dyn_fic_msgs);
 	pad_decoder = new PADDecoder(this, options.loose);
+	mnsc_decoder = new MNSCDecoder(this);
 
 	setWindowTitle("EDIScope v" + QString(EDISCOPE_VERSION));
 
@@ -245,6 +246,7 @@ EDIScopeQt::~EDIScopeQt() {
 
 	delete pad_decoder;
 	delete fic_decoder;
+	delete mnsc_decoder;
 
 	// a recording still in progress (e.g. interrupted by a signal) is completed rather than truncated
 	if(rec_file)
@@ -270,6 +272,8 @@ void EDIScopeQt::InitMenus() {
 	action_spi->setCheckable(true);
 	action_ann = menu_tools->addAction("&Announcements");
 	action_ann->setCheckable(true);
+	action_mnsc = menu_tools->addAction("&MNSC");
+	action_mnsc->setCheckable(true);
 	action_fig = menu_tools->addAction("&FIG Analysis");
 	action_fig->setCheckable(true);
 
@@ -377,6 +381,14 @@ QWidget* EDIScopeQt::InitToolBar() {
 	connect(btn_ann, &QPushButton::toggled, action_ann, &QAction::setChecked);
 	connect(action_ann, &QAction::triggered, btn_ann, &QPushButton::setChecked);
 	shortcut_actions["ann"] = toolbar->addWidget(btn_ann);
+
+	btn_mnsc = new QPushButton("MNSC", toolbar);
+	btn_mnsc->setCheckable(true);
+	btn_mnsc->setToolTip("Transmitter set-up and control information carried in the MNSC (ETS 300 799): TII code and offset delay of each transmitter");
+	connect(btn_mnsc, &QPushButton::toggled, this, &EDIScopeQt::OnMNSCToggled);
+	connect(btn_mnsc, &QPushButton::toggled, action_mnsc, &QAction::setChecked);
+	connect(action_mnsc, &QAction::triggered, btn_mnsc, &QPushButton::setChecked);
+	shortcut_actions["mnsc"] = toolbar->addWidget(btn_mnsc);
 
 	btn_fig = new QPushButton("FIG Analysis", toolbar);
 	btn_fig->setCheckable(true);
@@ -560,6 +572,9 @@ void EDIScopeQt::InitWidgets() {
 
 	spi_window = new EDIScopeQtSPIWindow(this);
 	connect(spi_window, &EDIScopeQtSPIWindow::Closed, this, [this]() {btn_spi->setChecked(false);});
+
+	mnsc_window = new EDIScopeQtMNSCWindow(this);
+	connect(mnsc_window, &EDIScopeQtMNSCWindow::Closed, this, [this]() {btn_mnsc->setChecked(false);});
 
 	ann_window = new EDIScopeQtAnnouncementsWindow(this);
 	connect(ann_window, &EDIScopeQtAnnouncementsWindow::Closed, this, [this]() {btn_ann->setChecked(false);});
@@ -1106,6 +1121,7 @@ void EDIScopeQt::StopEnsembleSource() {
 	// thread are dropped (see PostFromEngine)
 	ensemble_player->Flush();
 	fic_decoder->Reset();
+	mnsc_decoder->Reset();
 	// a new source starts without analysis (see StartSource)
 	fig_analysis_running = false;
 	fig_analyzer.Reset();
@@ -1123,6 +1139,7 @@ void EDIScopeQt::StopEnsembleSource() {
 	links_window->Clear();
 	oe_asw_clusters.clear();
 	ann_window->Clear();
+	mnsc_window->Clear();
 	known_subchannels.clear();
 	known_data_service_sids.clear();
 	known_data_service_ua_types.clear();
@@ -1550,7 +1567,7 @@ void EDIScopeQt::ShowSettings() {
 	QStringList current = ToolbarShortcuts();
 	std::vector<std::pair<QString, QCheckBox*>> boxes;
 	for(const std::pair<const char*, const char*>& tool : std::vector<std::pair<const char*, const char*>>{
-			{"links", "Links"}, {"rdns", "RadioDNS"}, {"spi", "SPI / EPG"}, {"ann", "Announcements"}, {"fig", "FIG Analysis"}}) {
+			{"links", "Links"}, {"rdns", "RadioDNS"}, {"spi", "SPI / EPG"}, {"ann", "Announcements"}, {"mnsc", "MNSC"}, {"fig", "FIG Analysis"}}) {
 		QCheckBox *box = new QCheckBox(tool.second, &dialog);
 		box->setChecked(current.contains(tool.first));
 		layout->addWidget(box);
@@ -1611,6 +1628,7 @@ void EDIScopeQt::ApplyTheme(EDIScopeQtTheme::Theme theme) {
 	rdns_window->ApplyTheme();
 	fig_window->ApplyTheme();
 	ann_window->ApplyTheme();
+	mnsc_window->ApplyTheme();
 }
 
 QStringList EDIScopeQt::ToolbarShortcuts() {
@@ -1649,6 +1667,25 @@ void EDIScopeQt::OnAnnouncementsToggled(bool checked) {
 	ann_window->AlignToParent();
 	ann_window->show();
 	ann_window->raise();
+}
+
+// --- MNSC window -----------------------------------------------------------------
+void EDIScopeQt::OnMNSCToggled(bool checked) {
+	if(!checked) {
+		mnsc_window->hide();
+		return;
+	}
+	mnsc_window->AlignToParent();
+	mnsc_window->show();
+	mnsc_window->raise();
+}
+
+void EDIScopeQt::MNSCTSCMessage(const MNSC_TSC& tsc) {
+	PostFromEngine([this, tsc]() {mnsc_window->AddTSC(tsc);});
+}
+
+void EDIScopeQt::MNSCCRCError() {
+	PostFromEngine([this]() {mnsc_window->AddCRCError();});
 }
 
 void EDIScopeQt::UpdateAnnouncementServices() {
@@ -1808,6 +1845,7 @@ void EDIScopeQt::closeEvent(QCloseEvent *event) {
 	spi_window->hide();
 	fig_window->hide();
 	ann_window->hide();
+	mnsc_window->hide();
 	QMetaObject::invokeMethod(qApp, []() {QCoreApplication::exit(0);}, Qt::QueuedConnection);
 }
 

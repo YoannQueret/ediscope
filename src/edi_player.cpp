@@ -380,6 +380,9 @@ void EDIPlayer::PlaybackFrame(const uint8_t *edi_frame) {
 				ReportEDIPlayback(timing);
 			}
 
+			// MID (2 bits), FP (3 bits), then the MNSC byte pair
+			ProcessMNSC((tag_value[3] >> 3) & 0x07, tag_value + 4);
+
 			if(fic_len)
 				ProcessFIC(tag_value + 2 + 4 + (atstf ? 8 : 0), fic_len);
 

@@ -102,6 +102,8 @@ public:
 
 	virtual void EnsembleChangeFormat(const AUDIO_SERVICE_FORMAT& /*format*/) {}
 	virtual void EnsembleProcessFIC(const uint8_t* /*data*/, size_t /*len*/) {}
+	// the MNSC byte pair of a frame (ETS 300 799 clause 5.5.1), with its Frame Phase (0..7)
+	virtual void EnsembleProcessMNSC(int /*fp*/, const uint8_t* /*mnsc*/) {}
 	virtual void EnsembleProcessPAD(const uint8_t* /*xpad_data*/, size_t /*xpad_len*/, bool /*exact_xpad_len*/, const uint8_t* /*fpad_data*/) {}
 	// one entry per audio channel (1 = mono, 2 = stereo), in the order the stream carries them
 	virtual void EnsembleAudioLevel(const std::vector<double>& /*channel_dbfs*/) {}
@@ -169,6 +171,7 @@ protected:
 	void PutAudio(const uint8_t *data, size_t len);
 
 	void ProcessFIC(const uint8_t *data, size_t len);
+	void ProcessMNSC(int fp, const uint8_t *mnsc);
 	void ProcessPAD(const uint8_t *xpad_data, size_t xpad_len, bool exact_xpad_len, const uint8_t *fpad_data);
 	void ProcessUntouchedStream(const uint8_t* data, size_t len, size_t duration_ms);
 

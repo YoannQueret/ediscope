@@ -68,6 +68,9 @@ void ETIPlayer::DecodeFrame(const uint8_t *eti_frame) {
 		return;
 	}
 
+	// FC: FP (3 bits) ahead of MID; EOH: the MNSC byte pair, after the stream characterisations
+	ProcessMNSC(eti_frame[6] >> 5, eti_frame + 4 + 4 + nst * 4);
+
 	if(ficl) {
 		ProcessFIC(eti_frame + subch_offset, ficl * 4);
 		subch_offset += ficl * 4;

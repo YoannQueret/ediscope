@@ -55,6 +55,8 @@
 #include "ediscope_qt_spi.h"
 #include "ediscope_qt_fig.h"
 #include "ediscope_qt_announcements.h"
+#include "ediscope_qt_mnsc.h"
+#include "mnsc_decoder.h"
 #include "fig_analyzer.h"
 #include "eti_source.h"
 #include "edi_source.h"
@@ -123,7 +125,7 @@ struct EDIScopeQtRecSample {
 // the main window. The engine (source, player, decoders) reports through the observer interfaces
 // below from its own threads; every report is handed over to the UI thread through Qt's event
 // queue (PostToUI) before touching any widget or UI-side state
-class EDIScopeQt : public QMainWindow, EnsembleSourceObserver, EnsemblePlayerObserver, FICDecoderObserver, PADDecoderObserver, UntouchedStreamConsumer, MOTDirectoryDecoderObserver {
+class EDIScopeQt : public QMainWindow, EnsembleSourceObserver, EnsemblePlayerObserver, FICDecoderObserver, PADDecoderObserver, UntouchedStreamConsumer, MOTDirectoryDecoderObserver, MNSCDecoderObserver {
 	Q_OBJECT
 private:
 	EDIScopeQtOptions options;
@@ -196,7 +198,7 @@ private:
 	void UpdateEnsembleRecordingStatus();
 	void ShowSettings();
 	void ApplyTheme(EDIScopeQtTheme::Theme theme);
-	static QStringList ToolbarShortcuts();	// "links", "rdns", "spi", "ann", "fig" - 3 at most
+	static QStringList ToolbarShortcuts();	// "links", "rdns", "spi", "ann", "mnsc", "fig" - 3 at most
 	void ApplyToolbarShortcuts();
 	std::map<QString, QAction*> shortcut_actions;	// the toolbar's widget action of each shortcut button
 
@@ -221,6 +223,14 @@ private:
 	void UpdateAnnouncementServices();
 	void UpdateAnnouncementSubchannels();
 	void UpdateAlarm();
+
+	// MNSC (ETS 300 799): transmitter set-up and control information - the window is fed all the
+	// time, like the announcements one
+	MNSCDecoder *mnsc_decoder;
+	QPushButton *btn_mnsc;
+	QAction *action_mnsc;
+	EDIScopeQtMNSCWindow *mnsc_window;
+	void OnMNSCToggled(bool checked);
 
 	// date/time
 	FIC_DAB_DT utc_dt_curr;
@@ -379,6 +389,7 @@ private:
 		if(fig_analysis_running)
 			fig_analyzer.ProcessFIC(data, len);
 	}
+	void EnsembleProcessMNSC(int fp, const uint8_t *mnsc) override {mnsc_decoder->Process(fp, mnsc);}
 	void EnsembleProcessPAD(const uint8_t *xpad_data, size_t xpad_len, bool exact_xpad_len, const uint8_t* fpad_data) override {pad_decoder->Process(xpad_data, xpad_len, exact_xpad_len, fpad_data);}
 
 	// UntouchedStreamConsumer (player thread)
@@ -408,6 +419,10 @@ private:
 	void PADChangeSlide(const MOT_FILE& slide) override;
 	void PADFileProgress(const double fraction) override;
 	void PADLengthError(size_t announced_xpad_len, size_t xpad_len) override;
+
+	// MNSCDecoderObserver (player thread)
+	void MNSCTSCMessage(const MNSC_TSC& tsc) override;
+	void MNSCCRCError() override;
 
 	// MOTDirectoryDecoderObserver (player thread)
 	void SPIObjectCompleted(const MOT_DIR_OBJECT& info, const std::vector<uint8_t>& data) override;
