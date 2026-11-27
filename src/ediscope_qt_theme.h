@@ -97,13 +97,14 @@ namespace EDIScopeQtTheme {
 
 
 // --- EDIScopeQtPanel -----------------------------------------------------------------
-// a rounded panel with a title strip (title on the left, optional info text on the right) and a
-// body below it, as in the mockup
+// a rounded panel with a title strip (title on the left, optional info text on the right, then an
+// optional alert badge at the far right) and a body below it, as in the mockup
 class EDIScopeQtPanel : public QFrame {
 	Q_OBJECT
 private:
 	QLabel *title_label;
 	QLabel *info_label;
+	QLabel *alert_label;
 	QVBoxLayout *body_layout;
 public:
 	EDIScopeQtPanel(const QString& title, QWidget *parent = nullptr);
@@ -112,6 +113,8 @@ public:
 	void SetTitle(const QString& title) {title_label->setText(title);}
 	void SetInfo(const QString& info) {info_label->setText(info);}
 	QLabel* InfoLabel() {return info_label;}
+	// a badge in white on red (e.g. "⚠ ALARM"), hidden when empty
+	void SetAlert(const QString& text, const QString& tooltip = QString());
 };
 
 #endif /* EDISCOPE_QT_THEME_H_ */

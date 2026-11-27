@@ -21,6 +21,7 @@
 
 // --- FICDecoder -----------------------------------------------------------------
 const std::chrono::seconds FICDecoder::service_timeout{3};
+const std::chrono::seconds FICDecoder::announcement_timeout{5};
 
 void FICDecoder::Log(const std::string& message) {
 	observer->FICLogMessage(message);
@@ -47,6 +48,8 @@ void FICDecoder::Reset() {
 	service_linking_sets.clear();
 	frequency_infos.clear();
 	oe_services.clear();
+	oe_announcement_supports.clear();
+	oe_asw_clusters.clear();
 	utc_dt = FIC_DAB_DT();
 }
 
@@ -186,6 +189,12 @@ void FICDecoder::ProcessFIG0(const uint8_t *data, size_t len) {
 		break;
 	case 19:
 		ProcessFIG0_19(data, len);
+		break;
+	case 25:
+		ProcessFIG0_25(data, len);
+		break;
+	case 26:
+		ProcessFIG0_26(data, len);
 		break;
 //	default:
 //		fprintf(stderr, "FICDecoder: received unsupported FIG 0/%d with %zu field bytes\n", header.extension, len);
@@ -884,28 +893,36 @@ void FICDecoder::ProcessFIG0_18(const uint8_t *data, size_t len) {
 }
 
 void FICDecoder::ProcessFIG0_19(const uint8_t *data, size_t len) {
-	// FIG 0/19 - Announcement switching
+	// FIG 0/19 - Announcement switching (ETSI EN 300 401 clause 8.1.6.2)
+	auto now = std::chrono::steady_clock::now();
 
 	// iterate through all announcement clusters
-	for(size_t offset = 0; offset < len;) {
+	for(size_t offset = 0; offset + 4 <= len;) {
 		uint8_t cid = data[offset];
 		uint16_t asw_flags = data[offset + 1] << 8 | data[offset + 2];
-		bool region_flag = data[offset + 3] & 0x40;
+		bool new_flag = data[offset + 3] & 0x80;
+		// b6 is Rfa in EN 300 401 V2 - the Region flag in V1.x, followed by a Region Id byte, which
+		// is skipped so that such a (legacy) FIG still parses
+		bool rfa_set = data[offset + 3] & 0x40;
 		int subchid = data[offset + 3] & 0x3F;
-		offset += region_flag ? 5 : 4;
+		offset += rfa_set ? 5 : 4;
 
 		FIC_ASW_CLUSTER ac;
 		ac.asw_flags = asw_flags;
 		ac.subchid = subchid;
+		ac.new_flag = new_flag;
+		ac.rfa_set = rfa_set;
 
 		FIC_ASW_CLUSTER& current_ac = ensemble.asw_clusters[cid];
+		current_ac.last_seen = now;
 		if(current_ac != ac) {
+			ac.last_seen = now;
 			current_ac = ac;
 
 			if(!disable_dyn_msgs) {
-				fprintf(stderr, "FICDecoder: ASw cluster 0x%02X: flags 0x%04X, SubChId %2d\n",
-						cid, asw_flags, subchid);
-				Log("ASw cluster " + StringTools::IntToHex(cid, 2) + ": flags " + StringTools::IntToHex(asw_flags, 4) + ", SubChId " + std::to_string(subchid));
+				fprintf(stderr, "FICDecoder: ASw cluster 0x%02X: flags 0x%04X, SubChId %2d%s\n",
+						cid, asw_flags, subchid, new_flag ? " (new)" : "");
+				Log("ASw cluster " + StringTools::IntToHex(cid, 2) + ": flags " + StringTools::IntToHex(asw_flags, 4) + ", SubChId " + std::to_string(subchid) + (new_flag ? " (new)" : ""));
 			}
 
 			UpdateEnsemble();
@@ -916,6 +933,105 @@ void FICDecoder::ProcessFIG0_19(const uint8_t *data, size_t len) {
 				if(s.cids.find(cid) != s.cids.cend())
 					UpdateService(s);
 			}
+		}
+	}
+}
+
+void FICDecoder::ProcessFIG0_25(const uint8_t *data, size_t len) {
+	// FIG 0/25 - OE Announcement support (ETSI EN 300 401 clause 8.1.6.3)
+	for(size_t offset = 0; offset + 5 <= len;) {
+		FIC_OE_ANNOUNCEMENT_SUPPORT support;
+		support.sid = data[offset] << 8 | data[offset + 1];
+		support.asu_flags = data[offset + 2] << 8 | data[offset + 3];
+		size_t number_of_targets = (data[offset + 4] & 0x03) + 1;
+		offset += 5;
+
+		if(offset + number_of_targets * 3 > len)
+			break;	// malformed
+		for(size_t i = 0; i < number_of_targets; i++) {
+			FIC_OE_ANNOUNCEMENT_TARGET target;
+			target.oe_cid = data[offset];
+			target.eid = data[offset + 1] << 8 | data[offset + 2];
+			support.targets.push_back(target);
+			offset += 3;
+		}
+
+		FIC_OE_ANNOUNCEMENT_SUPPORT& current = oe_announcement_supports[support.sid];
+		if(current != support) {
+			current = support;
+
+			std::string targets_str;
+			for(const FIC_OE_ANNOUNCEMENT_TARGET& target : support.targets) {
+				if(!targets_str.empty())
+					targets_str += ", ";
+				targets_str += StringTools::IntToHex(target.oe_cid, 2) + "@" + StringTools::IntToHex(target.eid, 4);
+			}
+			fprintf(stderr, "FICDecoder: SId 0x%04X: OE ASu flags 0x%04X, target(s) %s\n", support.sid, support.asu_flags, targets_str.c_str());
+			Log("SId " + StringTools::IntToHex(support.sid, 4) + ": OE ASu flags " + StringTools::IntToHex(support.asu_flags, 4) + ", target(s) " + targets_str);
+
+			observer->FICChangeOEAnnouncementSupport(current);
+		}
+	}
+}
+
+void FICDecoder::ProcessFIG0_26(const uint8_t *data, size_t len) {
+	// FIG 0/26 - OE Announcement switching (ETSI EN 300 401 clause 8.1.6.4)
+	auto now = std::chrono::steady_clock::now();
+
+	for(size_t offset = 0; offset + 6 <= len; offset += 6) {
+		FIC_OE_ASW_CLUSTER ac;
+		ac.oe_cid = data[offset];
+		ac.asw_flags = data[offset + 1] << 8 | data[offset + 2];
+		ac.new_flag = data[offset + 3] & 0x80;
+		ac.scids = data[offset + 3] & 0x0F;
+		ac.target_sid = data[offset + 4] << 8 | data[offset + 5];
+
+		uint32_t key = OEAnnouncementKey(ac.oe_cid, ac.target_sid);
+		FIC_OE_ASW_CLUSTER& current = oe_asw_clusters[key];
+		current.last_seen = now;
+		if(current != ac) {
+			ac.last_seen = now;
+			current = ac;
+
+			if(!disable_dyn_msgs) {
+				fprintf(stderr, "FICDecoder: OE ASw cluster 0x%02X: flags 0x%04X, target SId 0x%04X, SCIdS %d%s\n",
+						ac.oe_cid, ac.asw_flags, ac.target_sid, ac.scids, ac.new_flag ? " (new)" : "");
+				Log("OE ASw cluster " + StringTools::IntToHex(ac.oe_cid, 2) + ": flags " + StringTools::IntToHex(ac.asw_flags, 4) +
+						", target SId " + StringTools::IntToHex(ac.target_sid, 4) + ", SCIdS " + std::to_string(ac.scids) + (ac.new_flag ? " (new)" : ""));
+			}
+
+			observer->FICChangeOEAnnouncementSwitching(key, current);
+		}
+	}
+}
+
+void FICDecoder::CheckAnnouncementTimeouts() {
+	auto now = std::chrono::steady_clock::now();
+
+	bool ensemble_changed = false;
+	for(asw_clusters_t::value_type& kv : ensemble.asw_clusters) {
+		FIC_ASW_CLUSTER& ac = kv.second;
+		if(ac.IsActive() && now - ac.last_seen > announcement_timeout) {
+			ac.lost = true;
+			ensemble_changed = true;
+			fprintf(stderr, "FICDecoder: ASw cluster 0x%02X: no longer signalled, without end of announcement\n", kv.first);
+			Log("ASw cluster " + StringTools::IntToHex(kv.first, 2) + ": no longer signalled, without end of announcement");
+
+			for(const fic_services_t::value_type& service : services)
+				if(service.second.cids.find(kv.first) != service.second.cids.cend())
+					UpdateService(service.second);
+		}
+	}
+	if(ensemble_changed)
+		UpdateEnsemble();
+
+	for(fic_oe_asw_clusters_t::value_type& kv : oe_asw_clusters) {
+		FIC_OE_ASW_CLUSTER& ac = kv.second;
+		if(ac.IsActive() && now - ac.last_seen > announcement_timeout) {
+			ac.lost = true;
+			fprintf(stderr, "FICDecoder: OE ASw cluster 0x%02X: no longer signalled, without end of announcement\n", ac.oe_cid);
+			Log("OE ASw cluster " + StringTools::IntToHex(ac.oe_cid, 2) + ": no longer signalled, without end of announcement");
+			observer->FICChangeOEAnnouncementSwitching(kv.first, ac);
 		}
 	}
 }
@@ -1448,6 +1564,7 @@ void FICDecoder::CheckServiceTimeouts() {
 	}
 
 	PruneStaleSubchannels();
+	CheckAnnouncementTimeouts();
 }
 
 void FICDecoder::RemoveService(const FIC_SERVICE& service) {

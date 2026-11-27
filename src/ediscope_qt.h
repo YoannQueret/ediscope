@@ -54,6 +54,7 @@
 #include "ediscope_qt_rdns.h"
 #include "ediscope_qt_spi.h"
 #include "ediscope_qt_fig.h"
+#include "ediscope_qt_announcements.h"
 #include "fig_analyzer.h"
 #include "eti_source.h"
 #include "edi_source.h"
@@ -195,7 +196,7 @@ private:
 	void UpdateEnsembleRecordingStatus();
 	void ShowSettings();
 	void ApplyTheme(EDIScopeQtTheme::Theme theme);
-	static QStringList ToolbarShortcuts();	// "links", "rdns", "spi", "fig" - 3 at most
+	static QStringList ToolbarShortcuts();	// "links", "rdns", "spi", "ann", "fig" - 3 at most
 	void ApplyToolbarShortcuts();
 	std::map<QString, QAction*> shortcut_actions;	// the toolbar's widget action of each shortcut button
 
@@ -209,6 +210,17 @@ private:
 	QAction *action_fig;
 	EDIScopeQtFIGWindow *fig_window;
 	void OnFIGToggled(bool checked);
+
+	// announcements (FIG 0/18, 0/19, 0/25, 0/26) - the window is fed all the time, so its history
+	// and checks cover the whole connection
+	QPushButton *btn_ann;
+	QAction *action_ann;
+	EDIScopeQtAnnouncementsWindow *ann_window;
+	fic_oe_asw_clusters_t oe_asw_clusters;	// for the alarm badge (alarm of another ensemble)
+	void OnAnnouncementsToggled(bool checked);
+	void UpdateAnnouncementServices();
+	void UpdateAnnouncementSubchannels();
+	void UpdateAlarm();
 
 	// date/time
 	FIC_DAB_DT utc_dt_curr;
@@ -386,6 +398,8 @@ private:
 	void FICChangeServiceLinking(int key, const FIC_SERVICE_LINKING_SET& set) override;
 	void FICChangeFrequencyInfo(int key, const FIC_FREQUENCY_INFO& info) override;
 	void FICChangeOEService(int64_t key, const FIC_OE_SERVICE& service) override;
+	void FICChangeOEAnnouncementSupport(const FIC_OE_ANNOUNCEMENT_SUPPORT& support) override;
+	void FICChangeOEAnnouncementSwitching(uint32_t key, const FIC_OE_ASW_CLUSTER& cluster) override;
 	void FICChangeUTCDateTime(const FIC_DAB_DT& utc_dt) override;
 	void FICDiscardedFIB() override;
 

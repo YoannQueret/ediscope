@@ -46,6 +46,7 @@ set(ediscope_qt_sources
     ediscope_qt_rdns.cpp
     ediscope_qt_spi.cpp
     ediscope_qt_fig.cpp
+    ediscope_qt_announcements.cpp
     )
 
 # resolv: res_query()/ns_*() used by radiodns.cpp for raw CNAME/SRV DNS record lookups

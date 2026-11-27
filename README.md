@@ -43,6 +43,11 @@ etc.).
   checked against the repetition rates of ETSI TS 103 176, including the
   CEI and announcement bursts. See [FIG analysis](#fig-analysis).
 
+* **Announcements.** The announcement clusters and their state (FIG
+  0/19, 0/26), which service may be interrupted by what (FIG 0/18, 0/25),
+  the history of every announcement and consistency checks of the
+  signalling against ETSI EN 300 401. See [Announcements](#announcements).
+
 * **Service following.** Service linking (FIG 0/6), Frequency
   Information (FIG 0/21) and OE Services (FIG 0/24), cross-referenced
   with each other. See [Links](#links).
@@ -159,8 +164,8 @@ output.
 Start EDIScope from the applications menu (or run `ediscope`) and choose
 a source in the source box (see below).
 
-The **Tools** menu opens the Links, RadioDNS, SPI / EPG and FIG Analysis
-windows. Up to three of them can also be given a shortcut button in the
+The **Tools** menu opens the Links, RadioDNS, SPI / EPG, Announcements
+and FIG Analysis windows. Up to three of them can also be given a shortcut button in the
 toolbar.
 
 **Settings** holds the recordings folder and the choice of toolbar
@@ -332,17 +337,44 @@ precision) form, only the long form will be used, as soon as received for the
 first time.
 
 
-### Announcement support/switching
+### Announcements
 
-The status bar shows which announcements the current service supports.
-During a matching announcement, its type is highlighted and marked with
-▶; an announcement that would lead to a (temporary) switch to a
-different sub-channel is marked with ◆ instead, e.g. if traffic news of
-a different channel shall affect also listeners of a different service
-(which does not have its own announcements).
+The status bar shows, for the selected service, how many announcement
+types may interrupt it (FIG 0/18); its tooltip lists them, with the
+service's clusters. During a matching announcement, the indicator shows
+its type, marked with ▶ if it is carried on the service's own
+sub-channel, or with ◆ if it would lead to a (temporary) switch to a
+different sub-channel - e.g. traffic news of another service. Clicking
+the indicator opens the Announcements window.
 
-An active alarm announcement on ensemble level is indicated by "⚠ Alarm"
-after the ensemble label, highlighted in red.
+An alarm announcement in progress (FIG 0/19 or 0/26, cluster 0xFF, with
+the Al flag of FIG 0/0 set) is shown by a red "⚠ ALARM" badge at the
+right of the services table title.
+
+The "Announcements" window follows ETSI EN 300 401 V2.1.1 clause 8.1.6:
+
+* **Clusters**: every announcement cluster of the ensemble (FIG 0/19)
+  and every OE cluster (FIG 0/26, announcements carried in another
+  ensemble), with their state - ▶ in progress, ■ ended, ✗ lost (no
+  longer signalled for 5 seconds, without its end) -, types, sub-channel
+  or target service, New flag, start time, duration and member services;
+* **Support**: the announcement types that may interrupt each service,
+  from this ensemble (FIG 0/18, with its clusters) and from other
+  ensembles (FIG 0/25, with its targets);
+* **History**: the start, change, end or loss of every announcement, and
+  the changes of the Al flag, with their duration - it can be exported as
+  a CSV file;
+* **Checks**: the consistency of the signalling, each finding marked ✗
+  Error, ▲ Warning or ℹ Info, present or past: e.g. the alarm flag set in
+  FIG 0/18, the pre-defined cluster Ids 0x00/0xFF misused, an alarm
+  signalled while the Al flag is not set, an announcement on a cluster no
+  service belongs to or of a type none of them supports, a sub-channel
+  missing from FIG 0/1, an announcement that stopped without its end, or
+  one lasting more than 10 minutes.
+
+The window is fed from the moment a source is started, whether it is
+open or not; "Reset" clears the history and the checks. The repetition
+rates of these FIGs are measured by the FIG analysis.
 
 
 ### Hotkeys

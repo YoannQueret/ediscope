@@ -261,6 +261,8 @@ void EDIScopeQt::InitMenus() {
 	action_rdns->setCheckable(true);
 	action_spi = menu_tools->addAction("&SPI / EPG");
 	action_spi->setCheckable(true);
+	action_ann = menu_tools->addAction("&Announcements");
+	action_ann->setCheckable(true);
 	action_fig = menu_tools->addAction("&FIG Analysis");
 	action_fig->setCheckable(true);
 
@@ -360,6 +362,14 @@ QWidget* EDIScopeQt::InitToolBar() {
 	connect(btn_spi, &QPushButton::toggled, action_spi, &QAction::setChecked);
 	connect(action_spi, &QAction::triggered, btn_spi, &QPushButton::setChecked);
 	shortcut_actions["spi"] = toolbar->addWidget(btn_spi);
+
+	btn_ann = new QPushButton("Announcements", toolbar);
+	btn_ann->setCheckable(true);
+	btn_ann->setToolTip("Announcements (ETSI EN 300 401 clause 8.1.6): clusters, support, history and consistency checks");
+	connect(btn_ann, &QPushButton::toggled, this, &EDIScopeQt::OnAnnouncementsToggled);
+	connect(btn_ann, &QPushButton::toggled, action_ann, &QAction::setChecked);
+	connect(action_ann, &QAction::triggered, btn_ann, &QPushButton::setChecked);
+	shortcut_actions["ann"] = toolbar->addWidget(btn_ann);
 
 	btn_fig = new QPushButton("FIG Analysis", toolbar);
 	btn_fig->setCheckable(true);
@@ -544,6 +554,15 @@ void EDIScopeQt::InitWidgets() {
 	spi_window = new EDIScopeQtSPIWindow(this);
 	connect(spi_window, &EDIScopeQtSPIWindow::Closed, this, [this]() {btn_spi->setChecked(false);});
 
+	ann_window = new EDIScopeQtAnnouncementsWindow(this);
+	connect(ann_window, &EDIScopeQtAnnouncementsWindow::Closed, this, [this]() {btn_ann->setChecked(false);});
+	connect(ann_window, &EDIScopeQtAnnouncementsWindow::FIGAnalysisRequested, this, [this]() {
+		if(btn_fig->isChecked())
+			fig_window->raise();
+		else
+			btn_fig->setChecked(true);
+	});
+
 	// status bar
 	QFont mono = EDIScopeQtTheme::MonoFont();
 	status_connection = new QLabel(this);
@@ -562,12 +581,18 @@ void EDIScopeQt::InitWidgets() {
 	for(QLabel *label : {status_connection, status_ensemble, status_datetime, status_edi_delay, status_asu, status_fib})
 		label->setFont(mono);
 
+	// fixed width, so that an announcement never shifts the status bar: wide enough for the
+	// longest type name, e.g. "▶ Programme Information"; a click opens the Announcements window
+	// (caught by the application-wide event filter)
+	status_asu->setFixedWidth(QFontMetrics(mono).horizontalAdvance("▶ Programme Information") + 24);
+	status_asu->setCursor(Qt::PointingHandCursor);
+
 	statusBar()->setSizeGripEnabled(false);
 	statusBar()->addWidget(status_connection);
 	statusBar()->addWidget(status_ensemble);
 	statusBar()->addWidget(status_datetime);
 	statusBar()->addWidget(status_edi_delay);
-	statusBar()->addWidget(status_asu, 1);
+	statusBar()->addWidget(status_asu);
 	statusBar()->addPermanentWidget(progress_position);
 	statusBar()->addPermanentWidget(status_fib);
 
@@ -866,70 +891,76 @@ void EDIScopeQt::SetService(const LISTED_SERVICE& service) {
 }
 
 void EDIScopeQt::UpdateAnnouncementSupport(const LISTED_SERVICE& service) {
-	// reset, if no service/announcement support
-	if(service.IsNone() || service.asu_flags == LISTED_SERVICE::asu_flags_none) {
-		status_asu->clear();
-		status_asu->setToolTip(QString());
+	// a fixed-width indicator for the selected service (see InitWidgets): its number of supported
+	// announcement types, or the announcement in progress - "▶" on this service's own sub-channel,
+	// "◆" on another one. The details are in the tooltip and in the Announcements window
+	QString click = "<br><br>Click to open the Announcements window.";
+	if(service.IsNone()) {
+		status_asu->setText(ColoredText("Ann. —", EDIScopeQtTheme::text_muted));
+		status_asu->setToolTip("Announcements: no service selected" + click);
+		return;
+	}
+	if(service.asu_flags == LISTED_SERVICE::asu_flags_none) {
+		status_asu->setText(ColoredText("Ann. none", EDIScopeQtTheme::text_muted));
+		status_asu->setToolTip("Announcements: this service cannot be interrupted by any announcement (no FIG 0/18 support)" + click);
 		return;
 	}
 
-	// iterate through all supported announcement types - an active one is marked by a symbol and
-	// a background: "▶" on this service's own sub-channel, "◆" on another one
-	QString ac_str;
+	// every supported type, and those in progress
+	QStringList supported;
+	std::vector<std::pair<QString, bool>> active;	// type name, on this service's own sub-channel
 	for(int type = 0; type < 16; type++) {
 		uint16_t type_flag = 1 << type;
 		if(!(service.asu_flags & type_flag))
 			continue;
+		QString name = QString::fromStdString(FICDecoder::ConvertASuTypeToString(type));
 
-		// check all matching announcement clusters for active announcement
-		enum {NONE, OTHER, OWN} active = NONE;
+		enum {NONE, OTHER, OWN} state = NONE;
 		for(const cids_t::value_type& cid : service.cids) {
 			asw_clusters_t::const_iterator it = ensemble.asw_clusters.find(cid);
-			if(it == ensemble.asw_clusters.cend() || !(it->second.asw_flags & type_flag))
+			if(it == ensemble.asw_clusters.cend() || !it->second.IsActive() || !(it->second.asw_flags & type_flag))
 				continue;
-
 			if(it->second.subchid == service.audio_service.subchid)
-				active = OWN;
-			else if(active == NONE)
-				active = OTHER;
+				state = OWN;
+			else if(state == NONE)
+				state = OTHER;
 		}
 
-		if(!ac_str.isEmpty())
-			ac_str += " + ";
-
-		QString name = QString::fromStdString(FICDecoder::ConvertASuTypeToString(type)).toHtmlEscaped();
-		switch(active) {
-		case OWN:
-			ac_str += "<span style=\"background: #fbbf24; color: #0d1210;\">&nbsp;▶ " + name + "&nbsp;</span>";
-			break;
-		case OTHER:
-			ac_str += "<span style=\"background: #22d3ee; color: #0d1210;\">&nbsp;◆ " + name + "&nbsp;</span>";
-			break;
-		default:
-			ac_str += name;
+		if(state == NONE) {
+			supported << name.toHtmlEscaped();
+		} else {
+			active.emplace_back(name, state == OWN);
+			supported << "<b>" + QString(state == OWN ? "▶ " : "◆ ") + name.toHtmlEscaped() + "</b>";
 		}
 	}
 
-	// tooltip - all matching announcement clusters, active ones underlined
-	QString ac_tooltip;
+	QString text;
+	if(active.empty()) {
+		text = QString("Ann. %1 type%2").arg(supported.size()).arg(supported.size() == 1 ? "" : "s");
+	} else {
+		bool own = false;
+		for(const std::pair<QString, bool>& a : active)
+			own |= a.second;
+		QString label = active.size() == 1 ? active.front().first : QString("%1 in progress").arg(active.size());
+		text = QString("<span style=\"background: %1; color: #0d1210;\">&nbsp;%2 %3&nbsp;</span>")
+				.arg(own ? "#fbbf24" : "#22d3ee").arg(own ? "▶" : "◆").arg(label.toHtmlEscaped());
+	}
+
+	// tooltip: the supported types, the clusters
+	QString tooltip = "<b>Announcements</b> that may interrupt this service (FIG 0/18):<br>" + supported.join("<br>");
+	QString clusters;
 	for(const cids_t::value_type& cid : service.cids) {
 		asw_clusters_t::const_iterator it = ensemble.asw_clusters.find(cid);
-		bool present = it != ensemble.asw_clusters.cend();
-		bool active = present && (service.asu_flags & it->second.asw_flags);
-
-		ac_tooltip += ac_tooltip.isEmpty() ? "Cluster(s): " : " / ";
-		if(active)
-			ac_tooltip += "<u>";
-		ac_tooltip += QString::asprintf("0x%02X", cid);
-		if(present)
-			ac_tooltip += " (SubChId " + QString::number(it->second.subchid) + ")";
-		if(active)
-			ac_tooltip += "</u>";
+		clusters += clusters.isEmpty() ? "" : ", ";
+		clusters += QString::asprintf("0x%02X", cid);
+		if(it != ensemble.asw_clusters.cend() && it->second.IsActive())
+			clusters += " (in progress on SubChId " + QString::number(it->second.subchid) + ")";
 	}
-	ac_tooltip += "<br><br>▶ active on this service's sub-channel<br>◆ active on another sub-channel";
+	tooltip += "<br><br>Cluster(s): " + (clusters.isEmpty() ? QString("none") : clusters);
+	tooltip += "<br><br>▶ in progress on this service's sub-channel<br>◆ in progress on another sub-channel" + click;
 
-	status_asu->setText("Announcements: " + ac_str);
-	status_asu->setToolTip(ac_tooltip);
+	status_asu->setText(text);
+	status_asu->setToolTip(tooltip);
 }
 
 void EDIScopeQt::UpdateEnsembleDisplay() {
@@ -974,15 +1005,6 @@ void EDIScopeQt::UpdateEnsembleDisplay() {
 			" · EId " + eid;
 	if(!ecc_text.isEmpty())
 		text += " · ECC " + ecc_text.toHtmlEscaped();
-
-	// indicate active alarm announcement
-	if(ensemble.al_flag) {
-		asw_clusters_t::const_iterator cl_it = ensemble.asw_clusters.find(0xFF);
-		if(cl_it != ensemble.asw_clusters.end() && (cl_it->second.asw_flags & 0x01)) {
-			text += " <span style=\"color: white; background: #dc2626;\"><b>&nbsp;⚠ Alarm&nbsp;</b></span>";
-			tooltip_text += "\n" "Alarm SubChId: " + std::to_string(cl_it->second.subchid);
-		}
-	}
 
 	status_ensemble->setText(text);
 	status_ensemble->setToolTip(QString::fromStdString(tooltip_text));
@@ -1092,12 +1114,15 @@ void EDIScopeQt::StopEnsembleSource() {
 	frequency_infos.clear();
 	oe_services.clear();
 	links_window->Clear();
+	oe_asw_clusters.clear();
+	ann_window->Clear();
 	known_subchannels.clear();
 	known_data_service_sids.clear();
 	known_data_service_ua_types.clear();
 	ensemble = FIC_ENSEMBLE();
 	panel_services->setProperty("waiting", false);
 	UpdateEnsembleDisplay();
+	UpdateAlarm();
 	UpdateCUBar();
 	ensemble_player->StopAudio();
 
@@ -1517,7 +1542,7 @@ void EDIScopeQt::ShowSettings() {
 	QStringList current = ToolbarShortcuts();
 	std::vector<std::pair<QString, QCheckBox*>> boxes;
 	for(const std::pair<const char*, const char*>& tool : std::vector<std::pair<const char*, const char*>>{
-			{"links", "Links"}, {"rdns", "RadioDNS"}, {"spi", "SPI / EPG"}, {"fig", "FIG Analysis"}}) {
+			{"links", "Links"}, {"rdns", "RadioDNS"}, {"spi", "SPI / EPG"}, {"ann", "Announcements"}, {"fig", "FIG Analysis"}}) {
 		QCheckBox *box = new QCheckBox(tool.second, &dialog);
 		box->setChecked(current.contains(tool.first));
 		layout->addWidget(box);
@@ -1577,6 +1602,7 @@ void EDIScopeQt::ApplyTheme(EDIScopeQtTheme::Theme theme) {
 	dl_plus->Refresh();
 	rdns_window->ApplyTheme();
 	fig_window->ApplyTheme();
+	ann_window->ApplyTheme();
 }
 
 QStringList EDIScopeQt::ToolbarShortcuts() {
@@ -1604,6 +1630,68 @@ void EDIScopeQt::OnFIGToggled(bool checked) {
 		StartFIGAnalysis();
 	fig_window->show();
 	fig_window->raise();
+}
+
+// --- announcements window -----------------------------------------------------------------
+void EDIScopeQt::OnAnnouncementsToggled(bool checked) {
+	if(!checked) {
+		ann_window->hide();
+		return;
+	}
+	ann_window->AlignToParent();
+	ann_window->show();
+	ann_window->raise();
+}
+
+void EDIScopeQt::UpdateAnnouncementServices() {
+	std::vector<EDIScopeQtAnnouncementsWindow::SERVICE_ENTRY> list;
+	for(const LISTED_SERVICE& service : services_model->Services()) {
+		if(!service.is_audio || service.sid == LISTED_SERVICE::sid_none)
+			continue;
+		EDIScopeQtAnnouncementsWindow::SERVICE_ENTRY entry;
+		entry.sid = service.sid;
+		entry.primary = service.IsPrimary();
+		entry.subchid = service.audio_service.subchid;
+		entry.label = ServiceDetailCellText(service, EDIScopeQtServicesModel::COL_LABEL);
+		entry.asu_flags = service.asu_flags;
+		entry.cids = service.cids;
+		list.push_back(entry);
+	}
+	ann_window->SetServices(list);
+}
+
+void EDIScopeQt::UpdateAnnouncementSubchannels() {
+	std::set<int> subchids;
+	for(const std::pair<const int, FIC_SUBCHANNEL>& kv : known_subchannels)
+		subchids.insert(kv.first);
+	ann_window->SetSubchannels(subchids);
+}
+
+void EDIScopeQt::UpdateAlarm() {
+	// an alarm announcement in progress, in this ensemble (FIG 0/19, cluster 0xFF) or in another one
+	// (FIG 0/26, OE cluster 0xFF) - only if alarm announcements are enabled (Al flag of FIG 0/0),
+	// as receivers ignore them otherwise (ETSI EN 300 401 clause 8.1.6.0)
+	QStringList where;
+	if(ensemble.al_flag) {
+		asw_clusters_t::const_iterator it = ensemble.asw_clusters.find(0xFF);
+		if(it != ensemble.asw_clusters.cend() && it->second.IsActive() && (it->second.asw_flags & 0x0001)) {
+			QString text = "SubChId " + QString::number(it->second.subchid);
+			for(const LISTED_SERVICE& service : services_model->Services())
+				if(service.is_audio && service.audio_service.subchid == it->second.subchid) {
+					text += " (" + QString::fromStdString(ServiceDetailCellText(service, EDIScopeQtServicesModel::COL_LABEL)) + ")";
+					break;
+				}
+			where << text;
+		}
+		for(const fic_oe_asw_clusters_t::value_type& kv : oe_asw_clusters)
+			if(kv.second.oe_cid == 0xFF && kv.second.IsActive() && (kv.second.asw_flags & 0x0001))
+				where << "other ensemble, EId " + QString::fromStdString(StringTools::IntToHex(kv.second.target_sid, 4).substr(2));
+	}
+
+	if(where.isEmpty())
+		panel_services->SetAlert(QString());
+	else
+		panel_services->SetAlert("⚠ ALARM", "Alarm announcement in progress: " + where.join(", ") + "\nClick the Announcements indicator in the status bar for details");
 }
 
 void EDIScopeQt::StartFIGAnalysis() {
@@ -1711,10 +1799,18 @@ void EDIScopeQt::closeEvent(QCloseEvent *event) {
 	rdns_window->hide();
 	spi_window->hide();
 	fig_window->hide();
+	ann_window->hide();
 	QMetaObject::invokeMethod(qApp, []() {QCoreApplication::exit(0);}, Qt::QueuedConnection);
 }
 
 bool EDIScopeQt::eventFilter(QObject *watched, QEvent *event) {
+	if(watched == status_asu && event->type() == QEvent::MouseButtonRelease) {
+		if(btn_ann->isChecked())
+			ann_window->raise();
+		else
+			btn_ann->setChecked(true);
+		return true;
+	}
 	if(event->type() == QEvent::KeyPress && isActiveWindow()) {
 		// typing into a text field keeps its keys - incl. the URI box: an editable combo box has
 		// the focus itself (not its line edit), and forwards the keys to it
@@ -1816,6 +1912,8 @@ void EDIScopeQt::OnChangeEnsemble(const FIC_ENSEMBLE& new_ensemble) {
 	if(rdns_window->isVisible())
 		rdns_window->SetServices(BuildRDNSServiceList());	// the ECC/EId a manual test uses
 	UpdateEnsembleDisplay();
+	UpdateAlarm();
+	ann_window->SetEnsemble(ensemble);
 	services_model->RefreshAll();	// PTY names depend on the international table ID
 
 	LISTED_SERVICE service;
@@ -1865,6 +1963,7 @@ void EDIScopeQt::OnChangeService(const LISTED_SERVICE& new_service) {
 		links_window->SetServices(BuildLinksServiceList());
 	if(rdns_window->isVisible())
 		rdns_window->SetServices(BuildRDNSServiceList());
+	UpdateAnnouncementServices();
 }
 
 void EDIScopeQt::OnRemoveService(const fic_service_id_t& id) {
@@ -1890,6 +1989,7 @@ void EDIScopeQt::OnRemoveService(const fic_service_id_t& id) {
 		links_window->SetServices(BuildLinksServiceList());
 	if(rdns_window->isVisible())
 		rdns_window->SetServices(BuildRDNSServiceList());
+	UpdateAnnouncementServices();
 }
 
 void EDIScopeQt::OnChangeSPIService(int subchid, int address, bool fec) {
@@ -2270,6 +2370,7 @@ void EDIScopeQt::FICChangeSubchannel(int subchid, const FIC_SUBCHANNEL& subchann
 		known_subchannels[subchid] = subchannel;
 		RebuildDataSubchannelRows();
 		UpdateCUBar();
+		UpdateAnnouncementSubchannels();
 	});
 }
 
@@ -2278,6 +2379,7 @@ void EDIScopeQt::FICRemoveSubchannel(int subchid) {
 		known_subchannels.erase(subchid);
 		RebuildDataSubchannelRows();
 		UpdateCUBar();
+		UpdateAnnouncementSubchannels();
 	});
 }
 
@@ -2337,6 +2439,18 @@ void EDIScopeQt::FICChangeOEService(int64_t key, const FIC_OE_SERVICE& service) 
 		oe_services[key] = service;
 		if(links_window->isVisible())
 			links_window->UpdateOEService(key, service);
+	});
+}
+
+void EDIScopeQt::FICChangeOEAnnouncementSupport(const FIC_OE_ANNOUNCEMENT_SUPPORT& support) {
+	PostFromEngine([this, support]() {ann_window->UpdateOESupport(support);});
+}
+
+void EDIScopeQt::FICChangeOEAnnouncementSwitching(uint32_t key, const FIC_OE_ASW_CLUSTER& cluster) {
+	PostFromEngine([this, key, cluster]() {
+		oe_asw_clusters[key] = cluster;
+		ann_window->UpdateOESwitching(key, cluster);
+		UpdateAlarm();
 	});
 }
 

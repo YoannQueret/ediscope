@@ -101,19 +101,30 @@ struct FIC_SUBCHANNEL {
 	}
 };
 
+// one announcement cluster, as last signalled by FIG 0/19 (ETSI EN 300 401 clause 8.1.6.2)
 struct FIC_ASW_CLUSTER {
 	uint16_t asw_flags;
 	int subchid;
+	bool new_flag;		// newly introduced (vs. ongoing) announcement
+	bool rfa_set;		// the Rfa bit (b6) is set - the Region flag of EN 300 401 V1.x, removed in V2
+	// an announcement (ASw flags not zero) whose FIG 0/19 stopped without its end (ASw flags all
+	// zero) - see FICDecoder::announcement_timeout
+	bool lost;
+	std::chrono::steady_clock::time_point last_seen;	// not compared
 
 	static const int asw_flags_none = 0x0000;
 
 	static const int subchid_none = -1;
 	bool IsNone() const {return subchid == subchid_none;}
 
-	FIC_ASW_CLUSTER() : asw_flags(asw_flags_none), subchid(subchid_none) {}
+	// an announcement is going on: signalled, and still being signalled
+	bool IsActive() const {return asw_flags != asw_flags_none && !lost;}
+
+	FIC_ASW_CLUSTER() : asw_flags(asw_flags_none), subchid(subchid_none), new_flag(false), rfa_set(false), lost(false) {}
 
 	bool operator==(const FIC_ASW_CLUSTER & fic_asw_cluster) const {
-		return asw_flags == fic_asw_cluster.asw_flags && subchid == fic_asw_cluster.subchid;
+		return asw_flags == fic_asw_cluster.asw_flags && subchid == fic_asw_cluster.subchid &&
+				new_flag == fic_asw_cluster.new_flag && rfa_set == fic_asw_cluster.rfa_set && lost == fic_asw_cluster.lost;
 	}
 	bool operator!=(const FIC_ASW_CLUSTER & fic_asw_cluster) const {
 		return !(*this == fic_asw_cluster);
@@ -441,6 +452,56 @@ struct FIC_OE_SERVICE {
 
 typedef std::map<int64_t,FIC_OE_SERVICE> fic_oe_services_t;	// key: FICDecoder::OEServiceKey()
 
+// --- FIC_OE_ANNOUNCEMENT_SUPPORT / FIC_OE_ASW_CLUSTER -----------------------------------------------------------------
+// OE announcement support (FIG 0/25, ETSI EN 300 401 clause 8.1.6.3): the announcements carried in
+// other ensembles that may interrupt a service of the tuned ensemble
+struct FIC_OE_ANNOUNCEMENT_TARGET {
+	uint8_t oe_cid;		// OE Cluster Id
+	uint16_t eid;		// the ensemble carrying the announcement
+
+	bool operator==(const FIC_OE_ANNOUNCEMENT_TARGET& o) const {return oe_cid == o.oe_cid && eid == o.eid;}
+	bool operator!=(const FIC_OE_ANNOUNCEMENT_TARGET& o) const {return !(*this == o);}
+};
+
+struct FIC_OE_ANNOUNCEMENT_SUPPORT {
+	uint16_t sid;
+	uint16_t asu_flags;
+	std::vector<FIC_OE_ANNOUNCEMENT_TARGET> targets;
+
+	FIC_OE_ANNOUNCEMENT_SUPPORT() : sid(0), asu_flags(0) {}
+
+	bool operator==(const FIC_OE_ANNOUNCEMENT_SUPPORT& o) const {return sid == o.sid && asu_flags == o.asu_flags && targets == o.targets;}
+	bool operator!=(const FIC_OE_ANNOUNCEMENT_SUPPORT& o) const {return !(*this == o);}
+};
+
+typedef std::map<uint16_t,FIC_OE_ANNOUNCEMENT_SUPPORT> fic_oe_announcement_supports_t;	// key: SId
+
+// OE announcement switching (FIG 0/26, clause 8.1.6.4): an announcement carried in another
+// ensemble, for an OE cluster of the tuned ensemble
+struct FIC_OE_ASW_CLUSTER {
+	uint8_t oe_cid;
+	uint16_t asw_flags;
+	bool new_flag;
+	int scids;
+	uint16_t target_sid;	// the service carrying the announcement - the EId of that ensemble for an alarm
+	bool lost;				// as FIC_ASW_CLUSTER::lost
+	std::chrono::steady_clock::time_point last_seen;	// not compared
+
+	FIC_OE_ASW_CLUSTER() : oe_cid(0), asw_flags(0), new_flag(false), scids(0), target_sid(0), lost(false) {}
+
+	bool IsActive() const {return asw_flags != 0 && !lost;}
+
+	bool operator==(const FIC_OE_ASW_CLUSTER& o) const {
+		return oe_cid == o.oe_cid && asw_flags == o.asw_flags && new_flag == o.new_flag && scids == o.scids &&
+				target_sid == o.target_sid && lost == o.lost;
+	}
+	bool operator!=(const FIC_OE_ASW_CLUSTER& o) const {return !(*this == o);}
+};
+
+// key: FICDecoder::OEAnnouncementKey() - OE Cluster Id + target SId, as several alarm
+// announcements (OE Cluster Id 0xFF) can be signalled at once, one per other ensemble
+typedef std::map<uint32_t,FIC_OE_ASW_CLUSTER> fic_oe_asw_clusters_t;
+
 typedef std::map<uint16_t, FIC_SERVICE> fic_services_t;
 typedef std::map<int, FIC_SUBCHANNEL> fic_subchannels_t;
 
@@ -497,6 +558,13 @@ public:
 	// database key: OE + P/D + SId)
 	virtual void FICChangeOEService(int64_t /*key*/, const FIC_OE_SERVICE& /*service*/) {}
 
+	// OE announcement support (FIG 0/25) of a service was created or changed
+	virtual void FICChangeOEAnnouncementSupport(const FIC_OE_ANNOUNCEMENT_SUPPORT& /*support*/) {}
+
+	// OE announcement switching (FIG 0/26) was created or changed - key is
+	// FICDecoder::OEAnnouncementKey()
+	virtual void FICChangeOEAnnouncementSwitching(uint32_t /*key*/, const FIC_OE_ASW_CLUSTER& /*cluster*/) {}
+
 	// human-readable record of a hot change on the ensemble (EId, SId, label, short label, protection, bit rate, ...)
 	virtual void FICLogMessage(const std::string& /*message*/) {}
 
@@ -531,6 +599,8 @@ private:
 	void ProcessFIG0_6(const uint8_t *data, size_t len, bool pd, bool first_in_db);
 	void ProcessFIG0_21(const uint8_t *data, size_t len, bool oe);
 	void ProcessFIG0_24(const uint8_t *data, size_t len, bool oe, bool pd);
+	void ProcessFIG0_25(const uint8_t *data, size_t len);
+	void ProcessFIG0_26(const uint8_t *data, size_t len);
 
 	void ProcessFIG1(const uint8_t *data, size_t len);
 	void ProcessFIG1_0(uint16_t eid, const FIC_LABEL& label);
@@ -571,6 +641,8 @@ private:
 	fic_service_linking_sets_t service_linking_sets;	// from FIG 0/6
 	fic_frequency_infos_t frequency_infos;				// from FIG 0/21
 	fic_oe_services_t oe_services;						// from FIG 0/24
+	fic_oe_announcement_supports_t oe_announcement_supports;	// from FIG 0/25
+	fic_oe_asw_clusters_t oe_asw_clusters;				// from FIG 0/26
 
 	// Process() runs on the EDI playback thread, CheckServiceTimeouts() on the ensemble source's
 	// reader thread and Reset() on the UI thread: this serialises every access to the state above
@@ -581,6 +653,12 @@ private:
 
 	// minimum time a service may go unmentioned in FIG 0/2 before being considered hot-removed
 	static const std::chrono::seconds service_timeout;
+
+	// time after which an announcement (FIG 0/19 or 0/26 with ASw flags) no longer signalled, and
+	// never ended (ASw flags all zero), is considered lost: its FIG is due once per second, or
+	// down to every 3 s with a full FIC (ETSI TS 103 176 clause 4)
+	static const std::chrono::seconds announcement_timeout;
+	void CheckAnnouncementTimeouts();
 
 	FIC_DAB_DT utc_dt;
 	bool utc_dt_long;
@@ -614,6 +692,7 @@ public:
 	static int ServiceLinkingKey(bool pd, bool hard_link, bool international, int lsn);
 	static int FrequencyInfoKey(bool oe, uint32_t id, int rm);
 	static int64_t OEServiceKey(bool oe, bool pd, uint32_t sid);
+	static uint32_t OEAnnouncementKey(uint8_t oe_cid, uint16_t target_sid) {return (uint32_t) oe_cid << 16 | target_sid;}
 
 	static std::string ConvertLabelToUTF8(const FIC_LABEL& label, std::string* charset_name);
 	static std::string ConvertLanguageToString(const int value);

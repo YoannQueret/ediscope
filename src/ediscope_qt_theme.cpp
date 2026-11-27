@@ -371,9 +371,16 @@ EDIScopeQtPanel::EDIScopeQtPanel(const QString& title, QWidget *parent) : QFrame
 	info_label->setObjectName("panelInfo");
 	info_label->setFont(EDIScopeQtTheme::MonoFont());
 
+	alert_label = new QLabel(head);
+	alert_label->setObjectName("panelAlert");
+	// the same in both themes: an alert must stand out the same way
+	alert_label->setStyleSheet("QLabel#panelAlert {background: #dc2626; color: white; font-weight: 700; padding: 1px 8px; border-radius: 4px;}");
+	alert_label->hide();
+
 	head_layout->addWidget(title_label);
 	head_layout->addStretch(1);
 	head_layout->addWidget(info_label);
+	head_layout->addWidget(alert_label);
 
 	QVBoxLayout *layout = new QVBoxLayout(this);
 	layout->setContentsMargins(1, 1, 1, 1);
@@ -384,4 +391,10 @@ EDIScopeQtPanel::EDIScopeQtPanel(const QString& title, QWidget *parent) : QFrame
 	body_layout->setContentsMargins(0, 0, 0, 0);
 	body_layout->setSpacing(0);
 	layout->addLayout(body_layout, 1);
+}
+
+void EDIScopeQtPanel::SetAlert(const QString& text, const QString& tooltip) {
+	alert_label->setText(text);
+	alert_label->setToolTip(tooltip);
+	alert_label->setVisible(!text.isEmpty());
 }
