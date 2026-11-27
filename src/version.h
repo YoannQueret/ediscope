@@ -23,7 +23,7 @@
 
 // usually externally derived from git
 #ifndef EDISCOPE_VERSION
-#define EDISCOPE_VERSION "2.0.0"
+#define EDISCOPE_VERSION "2.0.1"
 #endif
 
 
