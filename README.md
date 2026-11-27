@@ -48,6 +48,11 @@ etc.).
   the history of every announcement and consistency checks of the
   signalling against ETSI EN 300 401. See [Announcements](#announcements).
 
+* **MNSC.** The Transmitter Set-up and Control information carried in
+  the Multiplex Network Signalling Channel of the ETI (ETS 300 799): the
+  TII code and offset delay signalled to each transmitter of the
+  network, with every change of these values. See [MNSC](#mnsc).
+
 * **Service following.** Service linking (FIG 0/6), Frequency
   Information (FIG 0/21) and OE Services (FIG 0/24), cross-referenced
   with each other. See [Links](#links).
@@ -62,7 +67,7 @@ etc.).
   [SPI (Service and Programme Information)](#spi-service-and-programme-information).
 
 * **Visualizations.** A frequency **spectrum analyzer** (bar or bubble
-  style, mono or stereo), a stereo **vectorscope/goniometer**, a phase
+  style, mono or stereo, with more bars as the window gets wider), a stereo **vectorscope/goniometer**, a phase
   **correlation meter** and a peak **level meter**, alongside the
   Dynamic Label (with DL Plus) and the Slideshow (with the last 4 slides).
 
@@ -164,9 +169,10 @@ output.
 Start EDIScope from the applications menu (or run `ediscope`) and choose
 a source in the source box (see below).
 
-The **Tools** menu opens the Links, RadioDNS, SPI / EPG, Announcements
-and FIG Analysis windows. Up to three of them can also be given a shortcut button in the
-toolbar.
+The **Tools** menu opens the Links, RadioDNS, SPI / EPG, Announcements,
+MNSC and FIG Analysis windows. Up to three of them can also be given a
+shortcut button in the toolbar. They are independent windows: they can
+be maximised or minimised, and go below the main window.
 
 **Settings** holds the recordings folder and the choice of toolbar
 shortcuts. They are kept in `~/.config/ediscope/ediscope.conf`.
@@ -377,6 +383,29 @@ open or not; "Reset" clears the history and the checks. The repetition
 rates of these FIGs are measured by the FIG analysis.
 
 
+### MNSC
+
+The "MNSC" window shows the Transmitter Set-up and Control (TSC)
+information carried in the Multiplex Network Signalling Channel of the
+ETI - the MNSC byte pair of each frame, in the EDI "deti" TAG item or in
+the ETI-NI header (ETS 300 799 clause 5.5.1 and annex A.3.2.1, ASS
+message type 0). This is how a multiplexer can signal its own TII code
+and offset delay to each transmitter of a network, as a scrolling list
+of transmitter addresses.
+
+* **Transmitters**: one row per transmitter address, with its TII code
+  (MainId, SubId), offset delay (µs) and control flags, the number of
+  messages received, the interval since the previous one, and when it
+  was first and last seen - sortable by any column, and exportable as a
+  CSV file;
+* **Changes**: every change of the values signalled for an address
+  already seen.
+
+Only messages with a correct CRC are taken into account; the others are
+counted as CRC errors. The window is fed from the moment a source is
+started, whether it is open or not; "Reset" clears it.
+
+
 ### Hotkeys
 
 Hotkey           | Meaning
@@ -487,7 +516,8 @@ EDIScope implements (at least partly) the following DAB standards:
 * ETSI TS 101 756 (Registered tables)
 * ETSI TS 103 466 (DAB audio)
 * ETSI TS 102 563 (DAB+ audio)
-* ETSI ETS 300 799 (ETI), including the conversion of EDI to ETI-NI
+* ETSI ETS 300 799 (ETI), including the conversion of EDI to ETI-NI and
+  the transmitter set-up and control messages of the MNSC
 * ETSI TS 102 693 (EDI), including its ATST/TIST timestamp fields,
   together with ETSI TS 102 821 (DCP), including its Annex B PFT/FEC
   fragmentation
