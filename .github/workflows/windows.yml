@@ -35,7 +35,8 @@ jobs:
           update: true
           install: >-
             git
-          # Qt (static) and every library it links: qt6-static doesn't pull them all in itself
+          # Qt (static) and every library it links - also those of plugins EDIScope doesn't use (WebP,
+          # TIFF, ...): qt6-static is the whole of Qt, and doesn't pull them all in itself
           pacboy: >-
             toolchain:p
             cmake:p
@@ -54,6 +55,13 @@ jobs:
             pcre2:p
             md4c:p
             double-conversion:p
+            libwebp:p
+            libtiff:p
+            xz:p
+            libdeflate:p
+            jbigkit:p
+            lerc:p
+            vulkan-headers:p
             SDL2:p
             mpg123:p
             fdk-aac:p
