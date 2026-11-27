@@ -35,12 +35,25 @@ jobs:
           update: true
           install: >-
             git
+          # Qt (static) and every library it links: qt6-static doesn't pull them all in itself
           pacboy: >-
             toolchain:p
             cmake:p
             ninja:p
             pkgconf:p
             qt6-static:p
+            libpng:p
+            libjpeg-turbo:p
+            freetype:p
+            harfbuzz:p
+            graphite2:p
+            brotli:p
+            bzip2:p
+            zstd:p
+            zlib:p
+            pcre2:p
+            md4c:p
+            double-conversion:p
             SDL2:p
             mpg123:p
             fdk-aac:p
