@@ -247,6 +247,12 @@ private:
 	void CheckForNewVersion();
 	void ShowNewVersion(const QString& version);
 
+	// everything known about the ensemble/multiplex, as selectable text - opened by a click on the
+	// services title
+	EDI_TIMING last_edi_timing;
+	void ShowEnsembleInfo();
+	QString EnsembleInfoText(QString *label = nullptr);
+
 	// date/time
 	FIC_DAB_DT utc_dt_curr;
 	int dt_lto;
@@ -313,6 +319,8 @@ private:
 	QAction *action_spi;
 	EDIScopeQtSPIWindow *spi_window;
 	void OnSPIToggled(bool checked);
+	QToolButton *btn_stop;	// stops playing the selected service (deselects it)
+	void UpdateStopButton();
 	QToolButton *btn_mute;
 	QSlider *slider_volume;
 

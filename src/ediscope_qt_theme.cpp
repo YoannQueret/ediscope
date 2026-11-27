@@ -425,7 +425,7 @@ EDIScopeQtPanel::EDIScopeQtPanel(const QString& title, QWidget *parent) : QFrame
 
 	QFrame *head = new QFrame(this);
 	head->setObjectName("panelHead");
-	QHBoxLayout *head_layout = new QHBoxLayout(head);
+	head_layout = new QHBoxLayout(head);
 	head_layout->setContentsMargins(12, 7, 12, 7);
 
 	title_label = new QLabel(title, head);
@@ -454,6 +454,11 @@ EDIScopeQtPanel::EDIScopeQtPanel(const QString& title, QWidget *parent) : QFrame
 	body_layout->setContentsMargins(0, 0, 0, 0);
 	body_layout->setSpacing(0);
 	layout->addLayout(body_layout, 1);
+}
+
+void EDIScopeQtPanel::AddHeadWidget(QWidget *widget) {
+	widget->setParent(head_layout->parentWidget());
+	head_layout->insertWidget(head_layout->indexOf(info_label), widget);
 }
 
 void EDIScopeQtPanel::SetAlert(const QString& text, const QString& tooltip) {

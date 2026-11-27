@@ -59,6 +59,10 @@
 #include <QStatusBar>
 #include <QStyleHints>
 #include <QToolBar>
+#include <QToolTip>
+#include <QPlainTextEdit>
+#include <QScrollBar>
+#include <QCursor>
 #include <QVBoxLayout>
 
 
@@ -378,10 +382,21 @@ QWidget* EDIScopeQt::InitToolBar() {
 	connect(btn_connect, &QPushButton::toggled, this, &EDIScopeQt::OnConnectToggled);
 	toolbar->addWidget(btn_connect);
 
-	btn_record = new QPushButton("● Record", toolbar);
+	// stops the recording in progress - only shown then (a recording is started from the Record
+	// menu), its place kept meanwhile so the toolbar doesn't shift
+	QWidget *record_slot = new QWidget(toolbar);
+	QHBoxLayout *record_slot_layout = new QHBoxLayout(record_slot);
+	record_slot_layout->setContentsMargins(0, 0, 0, 0);
+	btn_record = new QPushButton("■ Stop recording", record_slot);
 	btn_record->setObjectName("recordButton");
+	btn_record->setProperty("recording", true);
+	QSizePolicy record_policy = btn_record->sizePolicy();
+	record_policy.setRetainSizeWhenHidden(true);
+	btn_record->setSizePolicy(record_policy);
+	btn_record->hide();
 	connect(btn_record, &QPushButton::clicked, this, &EDIScopeQt::StopRecording);
-	toolbar->addWidget(btn_record);
+	record_slot_layout->addWidget(btn_record);
+	toolbar->addWidget(record_slot);
 
 	label_record = new QLabel(toolbar);
 	label_record->setFont(EDIScopeQtTheme::MonoFont());
@@ -443,6 +458,16 @@ QWidget* EDIScopeQt::InitToolBar() {
 	QWidget *spacer = new QWidget(toolbar);
 	spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 	toolbar->addWidget(spacer);
+
+	btn_stop = new QToolButton(toolbar);
+	btn_stop->setText("■");	// the symbol alone - what it does is in its tooltip
+	btn_stop->setToolTip("Stop playing the selected service");
+	btn_stop->setEnabled(false);
+	connect(btn_stop, &QToolButton::clicked, this, [this]() {
+		// no service selected: playback stops (see the selection change handler)
+		services_view->selectionModel()->clearSelection();
+	});
+	toolbar->addWidget(btn_stop);
 
 	btn_mute = new QToolButton(toolbar);
 	btn_mute->setText("Mute");
@@ -673,18 +698,27 @@ void EDIScopeQt::InitWidgets() {
 	for(QLabel *label : {status_connection, status_ensemble, status_datetime, status_edi_delay, status_asu, status_fib})
 		label->setFont(mono);
 
-	// fixed width, so that an announcement never shifts the status bar: wide enough for the
-	// longest type name, e.g. "▶ Programme Information"; a click opens the Announcements window
+	// fixed width, so that an announcement never shifts the services title: wide enough for the
+	// longest type name, e.g. "▶ Programme Information", right-aligned next to the services count;
+	// a click opens the Announcements window
 	// (caught by the application-wide event filter)
 	status_asu->setFixedWidth(QFontMetrics(mono).horizontalAdvance("▶ Programme Information") + 24);
 	status_asu->setCursor(Qt::PointingHandCursor);
+	// a click on the services title: everything about the ensemble (see ShowEnsembleInfo)
+	panel_services->TitleLabel()->setCursor(Qt::PointingHandCursor);
+	panel_services->TitleLabel()->setToolTip("Click for every detail of the ensemble");
+	status_asu->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+	status_asu->setContentsMargins(0, 0, 10, 0);
+	panel_services->AddHeadWidget(status_asu);
 
 	statusBar()->setSizeGripEnabled(false);
 	statusBar()->addWidget(status_connection);
-	statusBar()->addWidget(status_ensemble);
-	statusBar()->addWidget(status_datetime);
+	// the ensemble and its date/time aren't in the status bar: the ensemble is in the services
+	// title, every detail of it (date/time included) in the dialog its click opens - their labels
+	// are still kept up to date, hidden, for that dialog
+	status_ensemble->hide();
+	status_datetime->hide();
 	statusBar()->addWidget(status_edi_delay);
-	statusBar()->addWidget(status_asu);
 	statusBar()->addPermanentWidget(progress_position);
 	statusBar()->addPermanentWidget(status_fib);
 
@@ -1062,8 +1096,10 @@ void EDIScopeQt::UpdateEnsembleDisplay() {
 		if(!status_ensemble->text().contains("Waiting"))
 			status_ensemble->setText(ColoredText("Ensemble: -", EDIScopeQtTheme::text_muted));
 		status_ensemble->setToolTip(QString());
-		if(!panel_services->property("waiting").toBool())
+		if(!panel_services->property("waiting").toBool()) {
 			panel_services->SetTitle("Services");
+			panel_services->TitleLabel()->setToolTip(QString());	// nothing to show yet
+		}
 		return;
 	}
 	panel_services->setProperty("waiting", false);
@@ -1103,6 +1139,7 @@ void EDIScopeQt::UpdateEnsembleDisplay() {
 	status_ensemble->setText(text);
 	status_ensemble->setToolTip(QString::fromStdString(tooltip_text));
 	panel_services->SetTitle("Services — " + QString::fromStdString(label_plain) + " (EId " + eid + ")");
+	panel_services->TitleLabel()->setToolTip("Click for every detail of the ensemble");
 }
 
 void EDIScopeQt::UpdateConnectionStatus() {
@@ -1151,6 +1188,7 @@ void EDIScopeQt::ShowEnsembleWaitingMessage(bool file) {
 		status_ensemble->setText(ColoredText("<i>Waiting for the ensemble...</i>", EDIScopeQtTheme::text_muted));
 		status_ensemble->setToolTip(QString());
 		panel_services->SetTitle("Services — waiting for the ensemble...");
+		panel_services->TitleLabel()->setToolTip(QString());
 		panel_services->setProperty("waiting", true);
 		return;
 	}
@@ -1164,6 +1202,7 @@ void EDIScopeQt::ShowEnsembleWaitingMessage(bool file) {
 			"With a mux configured for a large TIST offset, this can take several seconds - even "
 			"though the connection itself already succeeded.");
 	panel_services->SetTitle("Services — waiting for timestamp synchronisation...");
+	panel_services->TitleLabel()->setToolTip(status_ensemble->toolTip());
 	panel_services->setProperty("waiting", true);
 }
 
@@ -1592,17 +1631,20 @@ void EDIScopeQt::UpdateRecordingUI() {
 	action_record_eti->setEnabled(idle && ensemble_source != nullptr);
 	action_stop_recording->setEnabled(!idle);
 
-	// the toolbar button only ever stops a recording - one is started from the Record menu
-	btn_record->setEnabled(!idle);
-	btn_record->setText(idle ? "● Record" : "■ Stop recording");
-	btn_record->setToolTip(idle ? "Start a recording from the Record menu" :
-			"Stop recording (R)\n" + recording_type + "\n" + QString::fromStdString(recording == REC_SERVICE ? rec_filename : mux_rec_filename));
-	btn_record->setProperty("recording", !idle);
-	btn_record->style()->unpolish(btn_record);
-	btn_record->style()->polish(btn_record);
+	// the toolbar button only stops a recording - shown while one is in progress
+	btn_record->setVisible(!idle);
+	if(!idle)
+		btn_record->setToolTip("Stop recording (R)\n" + recording_type + "\n" + QString::fromStdString(recording == REC_SERVICE ? rec_filename : mux_rec_filename));
 
 	if(recording == REC_ENSEMBLE)
 		UpdateEnsembleRecordingStatus();
+	UpdateStopButton();
+}
+
+void EDIScopeQt::UpdateStopButton() {
+	// a service played - unless it is being recorded (it can't be switched away from meanwhile)
+	LISTED_SERVICE service;
+	btn_stop->setEnabled(GetSelectedService(service) && service.is_audio && recording != REC_SERVICE);
 }
 
 void EDIScopeQt::UpdateEnsembleRecordingStatus() {
@@ -1818,6 +1860,132 @@ void EDIScopeQt::OnAnnouncementsToggled(bool checked) {
 	ann_window->show();
 	ann_window->raise();
 }
+
+// --- ensemble information -----------------------------------------------------------------
+QString EDIScopeQt::EnsembleInfoText(QString *ensemble_label) {
+	QString text;
+	auto section = [&text](const QString& title) {
+		text += (text.isEmpty() ? "" : "\n") + title + "\n";
+	};
+	auto row = [&text](const QString& name, const QString& value) {
+		text += QString("  %1 %2\n").arg(name, -22).arg(value);
+	};
+	auto yes_no = [](bool value) {return QString(value ? "yes" : "no");};
+
+	// --- ensemble ---
+	std::string charset_name;
+	std::string label = FICDecoder::ConvertLabelToUTF8(ensemble.label, &charset_name);
+	if(ensemble_label)
+		*ensemble_label = QString::fromStdString(label);
+	section("Ensemble");
+	row("Label", QString::fromStdString(label));
+	row("Short label", QString::fromStdString(FICDecoder::DeriveShortLabelUTF8(label, ensemble.label.short_label_mask)));
+	row("Label charset", QString::fromStdString(charset_name));
+	row("EId", QString::fromStdString(StringTools::IntToHex(ensemble.eid, 4).substr(2)));
+	if(ensemble.ecc != FIC_ENSEMBLE::ecc_none) {
+		const char *country = LookupECCCountry(ensemble.ecc, ensemble.eid >> 12);
+		row("ECC", QString::fromStdString(StringTools::IntToHex(ensemble.ecc, 2).substr(2)) + (country ? " (" + QString(country) + ")" : QString()));
+	}
+	row("Alarm flag (Al)", yes_no(ensemble.al_flag));
+	if(ensemble.lto != FIC_ENSEMBLE::lto_none)
+		row("LTO", QString::fromStdString(FICDecoder::ConvertLTOToString(ensemble.lto)));
+	if(ensemble.inter_table_id != FIC_ENSEMBLE::inter_table_id_none)
+		row("International table", QString::fromStdString(StringTools::IntToHex(ensemble.inter_table_id, 2) + " (" + FICDecoder::ConvertInterTableIDToString(ensemble.inter_table_id) + ")"));
+	if(!status_datetime->text().isEmpty())
+		row("Date/time (local)", QString(status_datetime->text()).remove(QRegularExpression("^Local: ")));
+
+	// --- source ---
+	section("Source");
+	if(!source_uri.isEmpty())
+		row("URI", source_uri);
+	if(edi_timing_valid) {
+		row("EDI margin", QString::number((int) std::lround(last_edi_timing.margin_delay_ms)) + " ms");
+		row("TIST@FCT0", QString::number((int) std::lround(last_edi_timing.tist_at_fct0_ms)) + " ms");
+	}
+	row("FIB CRC errors", QString::number(discarded_fibs.load()));
+
+	// --- multiplex ---
+	size_t audio_services = 0, data_rows = 0;
+	for(const LISTED_SERVICE& service : services_model->Services())
+		(service.is_audio ? audio_services : data_rows)++;
+	size_t used = cu_bar->UsedCUs();
+	section("Multiplex");
+	row("Sub-channels", QString::number(known_subchannels.size()));
+	row("Audio services", QString::number(audio_services));
+	row("Data sub-channels", QString::number(data_rows));
+	row("CUs", QString("%1 / %2 used, %3 free").arg(used).arg(EDIScopeQtCUBar::total_cus).arg(used < EDIScopeQtCUBar::total_cus ? EDIScopeQtCUBar::total_cus - used : 0));
+
+	// --- sub-channels, with the services they carry ---
+	section("Sub-channels");
+	text += QString("  %1 %2 %3 %4 %5 %6 %7 %8 %9\n").arg("SubChId", -8).arg("CUs", -14).arg("Protection", -11).arg("Bit rate", -12)
+			.arg("SId", -9).arg("Label", -18).arg("Short label", -12).arg("Language", -12).arg("PTY");
+	for(const std::pair<const int, FIC_SUBCHANNEL>& kv : known_subchannels) {
+		std::vector<const LISTED_SERVICE*> carried;
+		for(const LISTED_SERVICE& service : services_model->Services())
+			if(service.subchid == kv.first)
+				carried.push_back(&service);
+		const FIC_SUBCHANNEL& sc = kv.second;
+		QString cus = sc.pl.empty() ? QString() : QString("%1-%2 (%3)").arg(sc.start).arg(sc.start + sc.size - 1).arg(sc.size);
+		QString bitrate = sc.pl.empty() ? QString() : QString::number(sc.bitrate) + " kBit/s";
+		if(carried.empty())
+			carried.push_back(nullptr);
+		bool first = true;
+		for(const LISTED_SERVICE *service : carried) {
+			auto cell = [this, service](int column) {return service ? QString::fromStdString(ServiceDetailCellText(*service, column)) : QString();};
+			text += QString("  %1 %2 %3 %4 %5 %6 %7 %8 %9\n")
+					.arg(first ? QString::number(kv.first) : QString(), -8).arg(first ? cus : QString(), -14)
+					.arg(first ? QString::fromStdString(sc.pl) : QString(), -11).arg(first ? bitrate : QString(), -12)
+					.arg(cell(EDIScopeQtServicesModel::COL_SID), -9).arg(cell(EDIScopeQtServicesModel::COL_LABEL), -18)
+					.arg(cell(EDIScopeQtServicesModel::COL_SHORT_LABEL), -12).arg(cell(EDIScopeQtServicesModel::COL_LANGUAGE), -12)
+					.arg(cell(EDIScopeQtServicesModel::COL_PTY));
+			first = false;
+		}
+	}
+
+	return text;
+}
+
+void EDIScopeQt::ShowEnsembleInfo() {
+	QString label;
+	QString text = EnsembleInfoText(&label);
+
+	// --- dialog: selectable text, "Copy all" ---
+	QDialog dialog(this);
+	dialog.setWindowTitle("Ensemble - " + label);
+	dialog.resize(980, 620);
+	QVBoxLayout *layout = new QVBoxLayout(&dialog);
+	QPlainTextEdit *view = new QPlainTextEdit(text, &dialog);
+	view->setReadOnly(true);
+	view->setFont(EDIScopeQtTheme::MonoFont());
+	view->setLineWrapMode(QPlainTextEdit::NoWrap);
+	view->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
+	layout->addWidget(view, 1);
+
+	QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+	QPushButton *copy = buttons->addButton("Copy all", QDialogButtonBox::ActionRole);
+	connect(copy, &QPushButton::clicked, &dialog, [view]() {QApplication::clipboard()->setText(view->toPlainText());});
+	connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+	layout->addWidget(buttons);
+
+	// kept up to date (margin, FIB errors, date/time, sub-channels...) - but not while text is
+	// selected, so that it can be copied; the scroll position is kept
+	QTimer refresh_timer;
+	connect(&refresh_timer, &QTimer::timeout, &dialog, [this, view]() {
+		if(ensemble.IsNone() || view->textCursor().hasSelection())
+			return;
+		QString new_text = EnsembleInfoText();
+		if(new_text == view->toPlainText())
+			return;
+		int v = view->verticalScrollBar()->value(), h = view->horizontalScrollBar()->value();
+		view->setPlainText(new_text);
+		view->verticalScrollBar()->setValue(v);
+		view->horizontalScrollBar()->setValue(h);
+	});
+	refresh_timer.start(1000);
+	EDIScopeQtTheme::CenterOnWindow(&dialog, this);
+	dialog.exec();
+}
+
 
 // --- new version check -----------------------------------------------------------------
 // the X.Y.Z at the start of a version ("2.0.5", "2.0.5-3-g1234567-dirty"), as a comparable list
@@ -2094,6 +2262,42 @@ void EDIScopeQt::closeEvent(QCloseEvent *event) {
 }
 
 bool EDIScopeQt::eventFilter(QObject *watched, QEvent *event) {
+	// the status bar's details (tooltips), and the announcements indicator's (in the services
+	// title), shown as soon as the pointer is on them - as a slide's popup - and kept up to date
+	// while it stays there (e.g. the margin, updated 4 times a second)
+	for(QLabel *label : {status_connection, status_ensemble, status_datetime, status_edi_delay, status_asu, status_fib}) {
+		if(watched != label)
+			continue;
+		switch(event->type()) {
+		case QEvent::Enter:
+		case QEvent::ToolTip:	// instead of Qt's own, delayed one
+			if(!label->toolTip().isEmpty())
+				QToolTip::showText(QCursor::pos(), label->toolTip(), label, label->rect());
+			if(event->type() == QEvent::ToolTip)
+				return true;
+			break;
+		case QEvent::ToolTipChange:
+			if(label->underMouse()) {
+				if(label->toolTip().isEmpty())
+					QToolTip::hideText();
+				else
+					QToolTip::showText(QCursor::pos(), label->toolTip(), label, label->rect());
+			}
+			break;
+		case QEvent::Leave:
+			QToolTip::hideText();
+			break;
+		default:
+			break;
+		}
+	}
+
+	if(watched == panel_services->TitleLabel() && event->type() == QEvent::MouseButtonRelease) {
+		if(!ensemble.IsNone())
+			ShowEnsembleInfo();
+		return true;
+	}
+
 	if(watched == status_asu && event->type() == QEvent::MouseButtonRelease) {
 		if(btn_ann->isChecked())
 			ann_window->raise();
@@ -2184,6 +2388,7 @@ void EDIScopeQt::OnChangeFormat(const AUDIO_SERVICE_FORMAT& format) {
 
 void EDIScopeQt::OnEDITiming(const EDI_TIMING& timing) {
 	edi_timing_valid = timing.valid;
+	last_edi_timing = timing;
 	if(timing.valid) {
 		status_edi_delay->setText("Margin: " + QString::number((int) std::lround(timing.margin_delay_ms)) + " ms");
 		status_edi_delay->setToolTip("Margin delay (how far ahead of schedule frames arrive)\n"

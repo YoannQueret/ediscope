@@ -55,6 +55,19 @@ static void SetCell(QTableWidget *table, int row, int column, const QString& tex
 	table->setItem(row, column, item);
 }
 
+// every column (but the last, which stretches) as wide as its content - only ever widened: it
+// doesn't jump back and forth as the values change every second, and a column widened by hand stays
+static void FitColumns(QTableWidget *table) {
+	if(!table->rowCount())
+		return;
+	for(int column = 0; column < table->columnCount() - 1; column++) {
+		int width = table->columnWidth(column);
+		table->resizeColumnToContents(column);
+		if(table->columnWidth(column) < width)
+			table->setColumnWidth(column, width);
+	}
+}
+
 static QString Interval(double ms) {
 	return QString::fromStdString(FIGAnalyzer::FormatInterval(ms));
 }
@@ -405,11 +418,7 @@ void EDIScopeQtFIGWindow::Refresh() {
 	else
 		checks_view->clearSelection();
 	checks_view->blockSignals(false);
-	static bool sized = false;
-	if(!sized && !snapshot.checks.empty()) {
-		checks_view->resizeColumnsToContents();
-		sized = true;
-	}
+	FitColumns(checks_view);
 	RefreshDetail();
 
 	// --- FIGs ---
@@ -425,14 +434,11 @@ void EDIScopeQtFIGWindow::Refresh() {
 		SetCell(figs_view, row, 5, Interval(f.max_gap_ms), true);
 		SetVerdictCell(figs_view, row, 6, f.verdict);
 	}
-	static bool figs_sized = false;
-	if(!figs_sized && !snapshot.figs.empty()) {
-		figs_view->resizeColumnsToContents();
-		figs_sized = true;
-	}
+	FitColumns(figs_view);
 
 	// --- events ---
 	FillEvents(events_view, snapshot.events);
+	FitColumns(events_view);
 }
 
 void EDIScopeQtFIGWindow::RefreshDetail() {
@@ -460,6 +466,7 @@ void EDIScopeQtFIGWindow::RefreshDetail() {
 				events.push_back(e);
 		check_events_view->blockSignals(true);
 		FillEvents(check_events_view, events);
+		FitColumns(check_events_view);
 		check_events_view->clearSelection();
 		for(int row = 0; row < check_events_view->rowCount(); row++)
 			if(check_events_view->item(row, 0)->data(Qt::UserRole).toString() == selected_entity)
@@ -489,11 +496,7 @@ void EDIScopeQtFIGWindow::RefreshDetail() {
 			entities_view->selectRow(row);
 	entities_view->blockSignals(false);
 	RefreshHistogram();
-	static bool entities_sized = false;
-	if(!entities_sized && !check->entities.empty()) {
-		entities_view->resizeColumnsToContents();
-		entities_sized = true;
-	}
+	FitColumns(entities_view);
 }
 
 void EDIScopeQtFIGWindow::RefreshHistogram() {

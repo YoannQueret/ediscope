@@ -23,6 +23,7 @@
 #include <QColor>
 #include <QFont>
 #include <QFrame>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QTableWidget>
 #include <QVBoxLayout>
@@ -118,6 +119,7 @@ private:
 	QLabel *title_label;
 	QLabel *info_label;
 	QLabel *alert_label;
+	QHBoxLayout *head_layout;
 	QVBoxLayout *body_layout;
 public:
 	EDIScopeQtPanel(const QString& title, QWidget *parent = nullptr);
@@ -126,8 +128,11 @@ public:
 	void SetTitle(const QString& title) {title_label->setText(title);}
 	void SetInfo(const QString& info) {info_label->setText(info);}
 	QLabel* InfoLabel() {return info_label;}
+	QLabel* TitleLabel() {return title_label;}
 	// a badge in white on red (e.g. "⚠ ALARM"), hidden when empty
 	void SetAlert(const QString& text, const QString& tooltip = QString());
+	// an extra widget in the title strip, on the right, just before the info text
+	void AddHeadWidget(QWidget *widget);
 };
 
 #endif /* EDISCOPE_QT_THEME_H_ */
