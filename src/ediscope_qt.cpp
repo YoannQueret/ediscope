@@ -207,6 +207,8 @@ EDIScopeQt::EDIScopeQt(EDIScopeQtOptions options) :
 	pad_decoder = new PADDecoder(this, options.loose);
 	mnsc_decoder = new MNSCDecoder(this);
 
+	image_archive.SetSettings(EDIScopeQtImageArchive::Load(this->options.recordings_path));
+
 	setWindowTitle("EDIScope v" + QString(EDISCOPE_VERSION));
 
 	InitMenus();
@@ -1156,6 +1158,7 @@ void EDIScopeQt::StopEnsembleSource() {
 	ensemble_player->Flush();
 	fic_decoder->Reset();
 	mnsc_decoder->Reset();
+	image_archive.Reset();
 	// a new source starts without analysis (see StartSource)
 	fig_analysis_running = false;
 	fig_analyzer.Reset();
@@ -1612,6 +1615,37 @@ void EDIScopeQt::ShowSettings() {
 		layout->addWidget(note);
 	}
 
+	// saving of the images received
+	EDIScopeQtImageArchive::SETTINGS images = image_archive.Settings();
+	QLabel *images_title = new QLabel("Save received images", &dialog);
+	images_title->setStyleSheet("font-weight: 600; margin-top: 6px;");
+	layout->addWidget(images_title);
+	QHBoxLayout *images_folder_layout = new QHBoxLayout();
+	QLineEdit *images_folder_edit = new QLineEdit(images.path, &dialog);
+	images_folder_edit->setFont(EDIScopeQtTheme::MonoFont());
+	QPushButton *images_browse = new QPushButton("Browse...", &dialog);
+	connect(images_browse, &QPushButton::clicked, &dialog, [&dialog, images_folder_edit]() {
+		QString folder = QFileDialog::getExistingDirectory(&dialog, "Images folder", images_folder_edit->text());
+		if(!folder.isEmpty())
+			images_folder_edit->setText(folder);
+	});
+	images_folder_layout->addWidget(images_folder_edit, 1);
+	images_folder_layout->addWidget(images_browse);
+	layout->addLayout(images_folder_layout);
+	QCheckBox *images_slideshow = new QCheckBox("Slideshow (the service played)", &dialog);
+	QCheckBox *images_spi = new QCheckBox("SPI logos", &dialog);
+	QCheckBox *images_rdns = new QCheckBox("RadioDNS logos", &dialog);
+	images_slideshow->setChecked(images.slideshow);
+	images_spi->setChecked(images.spi);
+	images_rdns->setChecked(images.rdns);
+	for(QCheckBox *box : {images_slideshow, images_spi, images_rdns})
+		layout->addWidget(box);
+	QLabel *images_note = new QLabel("Saved as <folder>/eid-<EId>/sid-<SId>/slideshow, spi or radioDNS. A slide is named after its "
+			"reception time; a logo keeps its own name, and is saved again only if its content changes.", &dialog);
+	images_note->setWordWrap(true);
+	EDIScopeQtTheme::SetRole(images_note, "muted");
+	layout->addWidget(images_note);
+
 	// toolbar shortcuts
 	QLabel *shortcuts_title = new QLabel("Toolbar shortcuts (3 at most)", &dialog);
 	shortcuts_title->setStyleSheet("font-weight: 600; margin-top: 6px;");
@@ -1650,6 +1684,20 @@ void EDIScopeQt::ShowSettings() {
 	if(!folder.isEmpty() && folder.toStdString() != options.recordings_path) {
 		options.recordings_path = folder.toStdString();
 		settings.setValue("recordings/path", folder);
+	}
+
+	images.path = images_folder_edit->text().trimmed();
+	images.slideshow = images_slideshow->isChecked();
+	images.spi = images_spi->isChecked();
+	images.rdns = images_rdns->isChecked();
+	EDIScopeQtImageArchive::Save(images);
+	image_archive.SetSettings(images);
+	// the logos already received, saved right away (slides: from the next one on)
+	ArchiveSPILogos();
+	for(const std::pair<const std::pair<int,int>, RDNS_RESULT>& kv : rdns_results) {
+		std::map<std::pair<int,int>,std::pair<int,int>>::const_iterator params = rdns_tested_params.find(kv.first);
+		if(params != rdns_tested_params.end())
+			ArchiveRDNSLogos(params->second.second, kv.first.first, kv.second);
 	}
 
 	QStringList shortcuts;
@@ -1720,6 +1768,54 @@ void EDIScopeQt::OnAnnouncementsToggled(bool checked) {
 	ann_window->show();
 	ann_window->raise();
 }
+
+// --- image archive -----------------------------------------------------------------
+void EDIScopeQt::ArchiveSPILogos() {
+	if(!image_archive.Enabled(EDIScopeQtImageArchive::Kind::SPI) || ensemble.IsNone())
+		return;
+
+	auto save = [this](int eid, uint32_t sid, const std::vector<SPI_LOGO>& logos) {
+		for(const SPI_LOGO& logo : logos) {
+			std::map<std::string, std::vector<uint8_t>>::const_iterator data = spi_logo_data.find(logo.content_name);
+			if(data != spi_logo_data.end())
+				image_archive.SaveLogo(EDIScopeQtImageArchive::Kind::SPI, eid, sid, data->second, logo.content_name, logo.mime);
+		}
+	};
+
+	// a service's logos: under the service its DAB bearer names - in this ensemble if the service is
+	// carried here (so all of its images end up together, whichever ensemble the bearer itself
+	// names), else in the ensemble the bearer names
+	std::set<uint32_t> sids_here;
+	for(const LISTED_SERVICE& service : services_model->Services())
+		if(service.is_audio && service.sid != LISTED_SERVICE::sid_none)
+			sids_here.insert((uint32_t) service.sid);
+	for(const SPI_SERVICE& s : spi_info.services)
+		if(s.has_dab_bearer)
+			save(sids_here.count(s.sid) || s.eid < 0 ? ensemble.eid : s.eid, s.sid, s.logos);
+
+	// the logos not tied to a service (ensemble, programme groups): under the SPI data service itself
+	std::map<int, uint32_t>::const_iterator spi_sid = known_data_service_sids.find(spi_subchid);
+	if(spi_sid != known_data_service_sids.end()) {
+		save(ensemble.eid, spi_sid->second, spi_info.ensemble_logos);
+		for(const SPI_PROGRAMME_GROUP& group : spi_group_info.groups)
+			save(ensemble.eid, spi_sid->second, group.logos);
+	}
+}
+
+void EDIScopeQt::ArchiveRDNSLogos(int eid, int sid, const RDNS_RESULT& result) {
+	if(!image_archive.Enabled(EDIScopeQtImageArchive::Kind::RDNS))
+		return;
+
+	std::vector<const RDNS_XML_LOGO*> logos;
+	if(result.si_service_matched)
+		for(const RDNS_XML_LOGO& logo : result.si_service.logos)
+			logos.push_back(&logo);
+	for(const RDNS_XML_LOGO& logo : result.si_provider.logos)
+		logos.push_back(&logo);
+	for(const RDNS_XML_LOGO *logo : logos)
+		image_archive.SaveLogo(EDIScopeQtImageArchive::Kind::RDNS, eid, (uint32_t) sid, logo->data, logo->url, logo->mime);
+}
+
 
 // --- MNSC window -----------------------------------------------------------------
 void EDIScopeQt::OnMNSCToggled(bool checked) {
@@ -2290,13 +2386,14 @@ void EDIScopeQt::StartRDNSTest(int sid, int scids, int ecc, int eid) {
 	unsigned int generation = engine_generation;
 	std::thread([self, generation, sid, scids, ecc, eid]() {
 		RDNS_RESULT result = RadioDNSResolver::Resolve(ecc, eid, (uint32_t) sid, false, scids);
-		QMetaObject::invokeMethod(qApp, [self, generation, sid, scids, result]() {
+		QMetaObject::invokeMethod(qApp, [self, generation, sid, scids, eid, result]() {
 			// the window is gone, or the source changed in the meantime - a stale result then
 			if(!self || generation != self->engine_generation)
 				return;
 			std::pair<int,int> key(sid, scids);
 			self->rdns_pending.erase(key);
 			self->rdns_results[key] = result;
+			self->ArchiveRDNSLogos(eid, sid, result);
 			self->services_model->RefreshAll();	// refreshes the R column's checkmark
 			if(self->rdns_window->isVisible())
 				self->rdns_window->UpdateResult(sid, scids, result);
@@ -2578,7 +2675,13 @@ void EDIScopeQt::PADChangeDynamicLabel(const DL_STATE& dl) {
 }
 
 void EDIScopeQt::PADChangeSlide(const MOT_FILE& slide) {
-	PostFromEngine([this, slide]() {slideshow->UpdateSlide(slide);});
+	PostFromEngine([this, slide]() {
+		slideshow->UpdateSlide(slide);
+		// the slide of the service played
+		LISTED_SERVICE service;
+		if(GetSelectedService(service) && !ensemble.IsNone())
+			image_archive.SaveSlide(ensemble.eid, (uint32_t) service.sid, slide);
+	});
 }
 
 void EDIScopeQt::PADFileProgress(const double fraction) {
@@ -2600,6 +2703,7 @@ void EDIScopeQt::SPIObjectCompleted(const MOT_DIR_OBJECT& info, const std::vecto
 		if(SPIDecoder::DecodeServiceInformation(data, si))
 			PostFromEngine([this, si]() {
 				spi_info = si;
+				ArchiveSPILogos();
 				services_model->RefreshAll();	// refreshes the S column's checkmarks
 				if(spi_window->isVisible())
 					spi_window->Update(spi_info, spi_logo_data);
@@ -2643,6 +2747,7 @@ void EDIScopeQt::SPIObjectCompleted(const MOT_DIR_OBJECT& info, const std::vecto
 		if(SPIDecoder::DecodeGroupInformation(data, gi))
 			PostFromEngine([this, gi]() {
 				spi_group_info = gi;
+				ArchiveSPILogos();
 				if(spi_window->isVisible())
 					spi_window->UpdateGroupInformation(spi_group_info, spi_logo_data);
 			});
@@ -2659,6 +2764,7 @@ void EDIScopeQt::SPIOtherObjectCompleted(const MOT_DIR_OBJECT& info, const std::
 	std::string content_name = info.content_name;
 	PostFromEngine([this, content_name, data]() {
 		spi_logo_data[content_name] = data;
+		ArchiveSPILogos();
 		if(spi_window->isVisible()) {
 			spi_window->Update(spi_info, spi_logo_data);
 			spi_window->UpdateGroupInformation(spi_group_info, spi_logo_data);	// groups can have logos too

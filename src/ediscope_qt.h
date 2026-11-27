@@ -56,6 +56,7 @@
 #include "ediscope_qt_fig.h"
 #include "ediscope_qt_announcements.h"
 #include "ediscope_qt_mnsc.h"
+#include "ediscope_qt_image_archive.h"
 #include "mnsc_decoder.h"
 #include "fig_analyzer.h"
 #include "eti_source.h"
@@ -231,6 +232,11 @@ private:
 	QAction *action_mnsc;
 	EDIScopeQtMNSCWindow *mnsc_window;
 	void OnMNSCToggled(bool checked);
+
+	// saving of every image received (slides, SPI and RadioDNS logos), as set in the settings
+	EDIScopeQtImageArchive image_archive;
+	void ArchiveSPILogos();
+	void ArchiveRDNSLogos(int eid, int sid, const RDNS_RESULT& result);
 
 	// date/time
 	FIC_DAB_DT utc_dt_curr;

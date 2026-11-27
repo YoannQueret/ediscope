@@ -17,6 +17,7 @@
  */
 
 #include "ediscope_qt_theme.h"
+#include "ediscope_qt_image_archive.h"
 
 #include <cstring>
 #include <utility>
@@ -281,11 +282,8 @@ QLabel[role="error"] { color: @error@; }
 			const QString& suggested_name, const QString& mime, const QString& what) {
 		// the last part of a path or URL, without a query
 		QString name = suggested_name.section('?', 0, 0).section('/', -1);
-		if(!name.contains('.')) {
-			QString extension = mime.contains("png") ? ".png" : mime.contains("jpeg") || mime.contains("jpg") ? ".jpg" :
-					mime.contains("gif") ? ".gif" : mime.contains("svg") ? ".svg" : QString();
-			name = (name.isEmpty() ? what : name) + extension;
-		}
+		if(!name.contains('.'))
+			name = (name.isEmpty() ? what : name) + EDIScopeQtImageArchive::ImageExtension(data, mime);
 
 		QString title = "Save " + what + " as...";
 		QMenu menu(parent);
