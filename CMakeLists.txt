@@ -5,6 +5,11 @@
 cmake_minimum_required(VERSION 3.10)
 project(ediscope C CXX)
 
+# Windows: resource compiler, for the icon embedded in ediscope.exe (res/ediscope.rc)
+if(WIN32)
+    enable_language(RC)
+endif()
+
 # Select the release build type by default to get optimization flags
 if(NOT CMAKE_BUILD_TYPE)
    set(CMAKE_BUILD_TYPE "Release")

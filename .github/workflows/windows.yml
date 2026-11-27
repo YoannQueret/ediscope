@@ -28,6 +28,12 @@ jobs:
         with:
           fetch-depth: 0  # the whole history and the tags, for the version (git describe)
 
+      # actions/checkout turns the tag of a tag-triggered run into a lightweight one, which
+      # "git describe" (used by CMake for the version) ignores - restore the annotated tags
+      - name: Restore annotated tags
+        shell: pwsh
+        run: git fetch --force --tags origin
+
       - uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64

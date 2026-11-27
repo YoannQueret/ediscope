@@ -1,0 +1,3 @@
+// Windows resources of ediscope.exe: its icon, shown on the file itself (e.g. in the Explorer) -
+// generated from ediscope-icon.png, in sizes 16 to 256 px
+IDI_ICON1 ICON "ediscope.ico"
