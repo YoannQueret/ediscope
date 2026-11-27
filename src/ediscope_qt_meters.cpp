@@ -432,8 +432,11 @@ double EDIScopeQtSpectrum::FreqToFraction(double freq_hz) {
 	return std::log10(f / AudioSpectrumAnalyzer::min_freq) / std::log10(AudioSpectrumAnalyzer::max_freq / AudioSpectrumAnalyzer::min_freq);
 }
 
+// the levels of the amplitude scale - also the bubble style's horizontal lines
+static const double SPECTRUM_DB_TICKS[] = {0, -6, -12, -20, -40, -60, -90};
+
 void EDIScopeQtSpectrum::DrawAmplitudeScale(QPainter& painter, double baseline_y, double height, bool grow_upward, double margin_before, double margin_after) {
-	static const double ticks[] = {0, -6, -12, -20, -40, -60, -90};
+	const auto& ticks = SPECTRUM_DB_TICKS;
 
 	QFontMetricsF metrics(painter.font());
 	double label_height = metrics.height();
@@ -504,6 +507,22 @@ void EDIScopeQtSpectrum::DrawChannelBubble(QPainter& painter, size_t ch, double 
 		double offset = height * LevelToFraction(dbfs);
 		return grow_upward ? baseline_y - offset : baseline_y + offset;
 	};
+
+	// faint horizontal lines at the scale's levels, so the curve's level can be read (the floor is
+	// the axis itself)
+	// (between the borders' colour and the stereo meter guides', mostly the former: visible on the
+	// dark and the light theme, without getting in the way)
+	static const double GUIDE_SHARE = 0.25;
+	QColor a = EDIScopeQtTheme::border, b = EDIScopeQtTheme::meter_diagonal;
+	auto mix = [](int x, int y) {return (int) std::lround(x + (y - x) * GUIDE_SHARE);};
+	QColor grid(mix(a.red(), b.red()), mix(a.green(), b.green()), mix(a.blue(), b.blue()));
+	painter.setPen(QPen(grid, 1, Qt::DashLine));
+	for(double tick : SPECTRUM_DB_TICKS) {
+		if(tick <= min_dbfs)
+			continue;
+		double y = y_for(tick);
+		painter.drawLine(QPointF(x, y), QPointF(x + width, y));
+	}
 
 	painter.setRenderHint(QPainter::Antialiasing, true);
 

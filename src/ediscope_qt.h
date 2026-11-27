@@ -356,6 +356,7 @@ private:
 	QLabel *status_datetime;
 	QLabel *status_edi_delay;
 	EDIScopeQtIconButton *btn_margin_graph;		// next to the margin: its graph
+	QWidget *margin_block;						// the margin and its graph button, as one (one tooltip, one click)
 	EDIScopeQtIconButton *btn_ensemble_info;	// next to the services title: the ensemble's details
 	QLabel *status_asu;
 	QLabel *status_fib;

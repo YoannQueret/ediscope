@@ -115,6 +115,7 @@ QToolBar::separator { background: @input_border@; width: 1px; margin: 2px 6px; }
 QStatusBar { background: @bar_bg@; color: @text_secondary@; border-top: 1px solid @border@; }
 QStatusBar::item { border: none; }
 QStatusBar QLabel { padding: 0 8px; }
+QStatusBar QLabel#marginLabel { padding: 0 0 0 8px; }
 
 QFrame#panel { background: @panel_bg@; border: 1px solid @border@; border-radius: 10px; }
 QFrame#panelHead { background: transparent; border: none; border-bottom: 1px solid @border@; }
@@ -428,8 +429,13 @@ EDIScopeQtPanel::EDIScopeQtPanel(const QString& title, QWidget *parent) : QFrame
 	head_layout = new QHBoxLayout(head);
 	head_layout->setContentsMargins(12, 7, 12, 7);
 
-	title_label = new QLabel(title, head);
+	title_box = new QWidget(head);
+	title_layout = new QHBoxLayout(title_box);
+	title_layout->setContentsMargins(0, 0, 0, 0);
+	title_layout->setSpacing(10);	// a little room between the title and an icon after it
+	title_label = new QLabel(title, title_box);
 	title_label->setObjectName("panelTitle");
+	title_layout->addWidget(title_label);
 	info_label = new QLabel(head);
 	info_label->setObjectName("panelInfo");
 	info_label->setFont(EDIScopeQtTheme::MonoFont());
@@ -440,7 +446,7 @@ EDIScopeQtPanel::EDIScopeQtPanel(const QString& title, QWidget *parent) : QFrame
 	alert_label->setStyleSheet("QLabel#panelAlert {background: #dc2626; color: white; font-weight: 700; padding: 1px 8px; border-radius: 4px;}");
 	alert_label->hide();
 
-	head_layout->addWidget(title_label);
+	head_layout->addWidget(title_box);
 	head_layout->addStretch(1);
 	head_layout->addWidget(info_label);
 	head_layout->addWidget(alert_label);
@@ -457,8 +463,8 @@ EDIScopeQtPanel::EDIScopeQtPanel(const QString& title, QWidget *parent) : QFrame
 }
 
 void EDIScopeQtPanel::AddTitleWidget(QWidget *widget) {
-	widget->setParent(head_layout->parentWidget());
-	head_layout->insertWidget(head_layout->indexOf(title_label) + 1, widget);
+	widget->setParent(title_box);
+	title_layout->addWidget(widget);
 }
 
 void EDIScopeQtPanel::AddHeadWidget(QWidget *widget) {
@@ -494,7 +500,9 @@ void EDIScopeQtIconButton::leaveEvent(QEvent *event) {
 void EDIScopeQtIconButton::paintEvent(QPaintEvent* /*event*/) {
 	QPainter painter(this);
 	painter.setRenderHint(QPainter::Antialiasing, true);
-	QColor color = !isEnabled() ? EDIScopeQtTheme::text_disabled : (underMouse() ? EDIScopeQtTheme::accent : EDIScopeQtTheme::text_secondary);
+	// hovered itself - or its block, when part of one (MakeHoverBlock)
+	bool hovered = underMouse() || (testAttribute(Qt::WA_TransparentForMouseEvents) && parentWidget() && parentWidget()->underMouse());
+	QColor color = !isEnabled() ? EDIScopeQtTheme::text_disabled : (hovered ? EDIScopeQtTheme::accent : EDIScopeQtTheme::text_secondary);
 	QPen pen(color, 1.5);
 	pen.setCapStyle(Qt::RoundCap);
 	pen.setJoinStyle(Qt::RoundJoin);
@@ -529,3 +537,21 @@ void EDIScopeQtIconButton::paintEvent(QPaintEvent* /*event*/) {
 	}
 }
 
+void EDIScopeQtIconButton::MakeHoverBlock(QWidget *block) {
+	// every child transparent for the mouse: the block alone gets the hover (one tooltip, which can't
+	// vanish between a text and its icon) and the clicks; its icons repainted as it is entered/left
+	for(QWidget *child : block->findChildren<QWidget*>())
+		child->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+	block->setAttribute(Qt::WA_Hover, true);
+	class Repainter : public QObject {
+	public:
+		Repainter(QObject *parent) : QObject(parent) {}
+		bool eventFilter(QObject *watched, QEvent *event) override {
+			if(event->type() == QEvent::Enter || event->type() == QEvent::Leave)
+				for(EDIScopeQtIconButton *icon : static_cast<QWidget*>(watched)->findChildren<EDIScopeQtIconButton*>())
+					icon->update();
+			return false;
+		}
+	};
+	block->installEventFilter(new Repainter(block));
+}

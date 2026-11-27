@@ -562,6 +562,9 @@ void EDIScopeQt::InitWidgets() {
 		header->setSectionResizeMode(i, EDIScopeQtServicesModel::IsCheckmarkColumn(i) ? QHeaderView::Fixed : QHeaderView::Interactive);
 		header->resizeSection(i, column_widths[i]);
 	}
+	// CUs ("first-last (count)"): as wide as the longest such text can be, in the table's own font
+	header->resizeSection(EDIScopeQtServicesModel::COL_CUS,
+			std::max(column_widths[EDIScopeQtServicesModel::COL_CUS], QFontMetrics(services_view->font()).horizontalAdvance("863-863 (864)") + 24));
 	connect(header, &QHeaderView::sectionClicked, this, &EDIScopeQt::OnServicesHeaderClicked);
 
 	// room for 10 services at least; a taller window shows more, beyond that they scroll
@@ -706,24 +709,38 @@ void EDIScopeQt::InitWidgets() {
 		label->setFont(mono);
 
 	// fixed width, so that an announcement never shifts the services title: wide enough for the
-	// longest type name, e.g. "▶ Programme Information", right-aligned next to the services count;
+	// longest text, e.g. "Announcements: 10 types" or "▶ Programme Information" (as long), right-aligned
+	// next to the services count;
 	// a click opens the Announcements window
 	// (caught by the application-wide event filter)
-	status_asu->setFixedWidth(QFontMetrics(mono).horizontalAdvance("▶ Programme Information") + 24);
+	status_asu->setFixedWidth(QFontMetrics(mono).horizontalAdvance("Announcements: 10 types") + 24);
 	status_asu->setCursor(Qt::PointingHandCursor);
 	status_edi_delay->setCursor(Qt::PointingHandCursor);	// a click: its evolution (ShowMarginGraph)
 
-	btn_ensemble_info = new EDIScopeQtIconButton(EDIScopeQtIconButton::Icon::INFO, "Ensemble details");
+	btn_ensemble_info = new EDIScopeQtIconButton(EDIScopeQtIconButton::Icon::INFO, QString());
 	connect(btn_ensemble_info, &QAbstractButton::clicked, this, &EDIScopeQt::ShowEnsembleInfo);
 	panel_services->AddTitleWidget(btn_ensemble_info);
 	btn_ensemble_info->hide();	// until an ensemble is known
+	// the title and its ⓘ: one block - one tooltip, a click anywhere on it
+	EDIScopeQtIconButton::MakeHoverBlock(panel_services->TitleBox());
 
-	btn_margin_graph = new EDIScopeQtIconButton(EDIScopeQtIconButton::Icon::GRAPH, "EDI margin graph", this);
+	// the margin and its graph button: one block, with one tooltip (theirs left empty, so the
+	// block's shows over both) - a click anywhere on it opens the graph
+	margin_block = new QWidget(this);
+	QHBoxLayout *margin_layout = new QHBoxLayout(margin_block);
+	margin_layout->setContentsMargins(0, 0, 0, 0);
+	margin_layout->setSpacing(10);	// a little room between the text and its icon
+	status_edi_delay->setObjectName("marginLabel");	// no padding on its right: the icon right after the text
+	btn_margin_graph = new EDIScopeQtIconButton(EDIScopeQtIconButton::Icon::GRAPH, QString(), margin_block);
 	connect(btn_margin_graph, &QAbstractButton::clicked, this, &EDIScopeQt::ShowMarginGraph);
-	btn_margin_graph->hide();	// until there is a margin
+	margin_layout->addWidget(status_edi_delay);
+	margin_layout->addWidget(btn_margin_graph);
+	margin_block->setToolTip("Click for EDI margin evolution graph");
+	margin_block->setCursor(Qt::PointingHandCursor);
+	EDIScopeQtIconButton::MakeHoverBlock(margin_block);
+	margin_block->hide();	// until there is a margin
 	// a click on the services title: everything about the ensemble (see ShowEnsembleInfo)
-	panel_services->TitleLabel()->setCursor(Qt::PointingHandCursor);
-	panel_services->TitleLabel()->setToolTip("Click for every detail of the ensemble");
+	panel_services->TitleBox()->setCursor(Qt::PointingHandCursor);
 	status_asu->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 	status_asu->setContentsMargins(0, 0, 10, 0);
 	panel_services->AddHeadWidget(status_asu);
@@ -735,8 +752,7 @@ void EDIScopeQt::InitWidgets() {
 	// are still kept up to date, hidden, for that dialog
 	status_ensemble->hide();
 	status_datetime->hide();
-	statusBar()->addWidget(status_edi_delay);
-	statusBar()->addWidget(btn_margin_graph);
+	statusBar()->addWidget(margin_block);
 	statusBar()->addPermanentWidget(progress_position);
 	statusBar()->addPermanentWidget(status_fib);
 
@@ -1040,17 +1056,25 @@ void EDIScopeQt::UpdateAnnouncementSupport(const LISTED_SERVICE& service) {
 	// a fixed-width indicator for the selected service (see InitWidgets): its number of supported
 	// announcement types, or the announcement in progress - "▶" on this service's own sub-channel,
 	// "◆" on another one. The details are in the tooltip and in the Announcements window
+	// a link to the Announcements window only when there is something to see there for this service
 	QString click = "<br><br>Click to open the Announcements window.";
+	auto set_link = [this](bool link) {
+		status_asu->setProperty("link", link);
+		status_asu->setCursor(link ? Qt::PointingHandCursor : Qt::ArrowCursor);
+	};
 	if(service.IsNone()) {
-		status_asu->setText(ColoredText("Ann. —", EDIScopeQtTheme::text_muted));
-		status_asu->setToolTip("Announcements: no service selected" + click);
+		status_asu->setText(ColoredText("Announcements: —", EDIScopeQtTheme::text_muted));
+		status_asu->setToolTip("Announcements: no service selected");
+		set_link(false);
 		return;
 	}
 	if(service.asu_flags == LISTED_SERVICE::asu_flags_none) {
-		status_asu->setText(ColoredText("Ann. none", EDIScopeQtTheme::text_muted));
-		status_asu->setToolTip("Announcements: this service cannot be interrupted by any announcement (no FIG 0/18 support)" + click);
+		status_asu->setText(ColoredText("Announcements: none", EDIScopeQtTheme::text_muted));
+		status_asu->setToolTip("Announcements: this service cannot be interrupted by any announcement (no FIG 0/18 support)");
+		set_link(false);
 		return;
 	}
+	set_link(true);
 
 	// every supported type, and those in progress
 	QStringList supported;
@@ -1082,7 +1106,7 @@ void EDIScopeQt::UpdateAnnouncementSupport(const LISTED_SERVICE& service) {
 
 	QString text;
 	if(active.empty()) {
-		text = QString("Ann. %1 type%2").arg(supported.size()).arg(supported.size() == 1 ? "" : "s");
+		text = QString("Announcements: %1 type%2").arg(supported.size()).arg(supported.size() == 1 ? "" : "s");
 	} else {
 		bool own = false;
 		for(const std::pair<QString, bool>& a : active)
@@ -1117,7 +1141,7 @@ void EDIScopeQt::UpdateEnsembleDisplay() {
 		btn_ensemble_info->hide();
 		if(!panel_services->property("waiting").toBool()) {
 			panel_services->SetTitle("Services");
-			panel_services->TitleLabel()->setToolTip(QString());	// nothing to show yet
+			panel_services->TitleBox()->setToolTip(QString());	// nothing to show yet
 		}
 		return;
 	}
@@ -1159,7 +1183,7 @@ void EDIScopeQt::UpdateEnsembleDisplay() {
 	status_ensemble->setToolTip(QString::fromStdString(tooltip_text));
 	panel_services->SetTitle("Services — " + QString::fromStdString(label_plain) + " (EId " + eid + ")");
 	btn_ensemble_info->show();
-	panel_services->TitleLabel()->setToolTip("Click for every detail of the ensemble");
+	panel_services->TitleBox()->setToolTip("Click for ensemble details");
 }
 
 void EDIScopeQt::UpdateConnectionStatus() {
@@ -1208,7 +1232,7 @@ void EDIScopeQt::ShowEnsembleWaitingMessage(bool file) {
 		status_ensemble->setText(ColoredText("<i>Waiting for the ensemble...</i>", EDIScopeQtTheme::text_muted));
 		status_ensemble->setToolTip(QString());
 		panel_services->SetTitle("Services — waiting for the ensemble...");
-		panel_services->TitleLabel()->setToolTip(QString());
+		panel_services->TitleBox()->setToolTip(QString());
 		panel_services->setProperty("waiting", true);
 		return;
 	}
@@ -1222,7 +1246,7 @@ void EDIScopeQt::ShowEnsembleWaitingMessage(bool file) {
 			"With a mux configured for a large TIST offset, this can take several seconds - even "
 			"though the connection itself already succeeded.");
 	panel_services->SetTitle("Services — waiting for timestamp synchronisation...");
-	panel_services->TitleLabel()->setToolTip(status_ensemble->toolTip());
+	panel_services->TitleBox()->setToolTip(status_ensemble->toolTip());
 	panel_services->setProperty("waiting", true);
 }
 
@@ -1300,7 +1324,7 @@ void EDIScopeQt::StopEnsembleSource() {
 	status_datetime->clear();
 	status_datetime->setToolTip("Local date/time (from the ensemble)");
 	status_edi_delay->clear();
-	btn_margin_graph->hide();
+	margin_block->hide();
 	edi_timing_valid = false;
 
 	utc_dt_curr = FIC_DAB_DT();
@@ -1368,6 +1392,17 @@ void EDIScopeQt::OnConnectToggled(bool checked) {
 		btn_connect->setChecked(false);
 		btn_connect->blockSignals(false);
 	};
+
+	// no source given: the last one (the network history's first entry - files aren't kept there)
+	if(uri.empty()) {
+		std::vector<std::string> history = LoadNetworkHistory();
+		if(history.empty()) {
+			fail("No source given, and none used before - enter an EDI URI (e.g. tcp://host:port) or open a file.");
+			return;
+		}
+		uri = history.front();
+		combo_uri->lineEdit()->setText(QString::fromStdString(uri));
+	}
 
 	static const std::string PREFIX_FILE = "file://";
 	if(uri.compare(0, PREFIX_FILE.size(), PREFIX_FILE) == 0) {
@@ -2362,8 +2397,8 @@ bool EDIScopeQt::eventFilter(QObject *watched, QEvent *event) {
 	// the status bar's details (tooltips), and the announcements indicator's (in the services
 	// title), shown as soon as the pointer is on them - as a slide's popup - and kept up to date
 	// while it stays there (e.g. the margin, updated 4 times a second)
-	for(QWidget *label : std::initializer_list<QWidget*>{status_connection, status_ensemble, status_datetime, status_edi_delay, status_asu, status_fib,
-			btn_margin_graph, btn_ensemble_info}) {
+	for(QWidget *label : std::initializer_list<QWidget*>{status_connection, status_ensemble, status_datetime, margin_block, status_asu, status_fib,
+			panel_services->TitleBox()}) {
 		if(watched != label)
 			continue;
 		switch(event->type()) {
@@ -2390,18 +2425,18 @@ bool EDIScopeQt::eventFilter(QObject *watched, QEvent *event) {
 		}
 	}
 
-	if(watched == status_edi_delay && event->type() == QEvent::MouseButtonRelease) {
+	if((watched == status_edi_delay || watched == margin_block) && event->type() == QEvent::MouseButtonRelease) {
 		ShowMarginGraph();
 		return true;
 	}
 
-	if(watched == panel_services->TitleLabel() && event->type() == QEvent::MouseButtonRelease) {
+	if(watched == panel_services->TitleBox() && event->type() == QEvent::MouseButtonRelease) {
 		if(!ensemble.IsNone())
 			ShowEnsembleInfo();
 		return true;
 	}
 
-	if(watched == status_asu && event->type() == QEvent::MouseButtonRelease) {
+	if(watched == status_asu && event->type() == QEvent::MouseButtonRelease && status_asu->property("link").toBool()) {
 		if(btn_ann->isChecked())
 			ann_window->raise();
 		else
@@ -2505,15 +2540,11 @@ void EDIScopeQt::OnEDITiming(const EDI_TIMING& timing) {
 			margin_history.pop_front();
 
 		status_edi_delay->setText("Margin: " + QString::number((int) std::lround(timing.margin_delay_ms)) + " ms");
-		btn_margin_graph->show();
-		status_edi_delay->setToolTip("Margin delay (how far ahead of schedule frames arrive)\n"
-				"TIST@FCT0: " + QString::number((int) std::lround(timing.tist_at_fct0_ms)) + " ms\n"
-				"Click for its evolution");
+		margin_block->show();
 	} else {
 		margin_valid_since_ms = 0;	// the next valid values settle again (e.g. after a reconnection)
-		btn_margin_graph->hide();
+		margin_block->hide();
 		status_edi_delay->clear();
-		status_edi_delay->setToolTip(QString());
 	}
 }
 

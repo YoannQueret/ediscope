@@ -118,6 +118,8 @@ namespace EDIScopeQtTheme {
 class EDIScopeQtPanel : public QFrame {
 	Q_OBJECT
 private:
+	QWidget *title_box;		// the title and the widgets right after it (AddTitleWidget)
+	QHBoxLayout *title_layout;
 	QLabel *title_label;
 	QLabel *info_label;
 	QLabel *alert_label;
@@ -131,6 +133,7 @@ public:
 	void SetInfo(const QString& info) {info_label->setText(info);}
 	QLabel* InfoLabel() {return info_label;}
 	QLabel* TitleLabel() {return title_label;}
+	QWidget* TitleBox() {return title_box;}
 	// a badge in white on red (e.g. "⚠ ALARM"), hidden when empty
 	void SetAlert(const QString& text, const QString& tooltip = QString());
 	// an extra widget in the title strip, on the right, just before the info text
@@ -157,6 +160,9 @@ protected:
 	void leaveEvent(QEvent *event) override;
 public:
 	EDIScopeQtIconButton(Icon icon, const QString& tooltip, QWidget *parent = nullptr);
+	// part of a block that gets the mouse instead of it (see MakeHoverBlock): highlighted while the
+	// block is hovered
+	static void MakeHoverBlock(QWidget *block);
 	QSize sizeHint() const override {return QSize(18, 18);}
 };
 
