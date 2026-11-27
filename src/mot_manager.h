@@ -106,6 +106,7 @@ public:
 
 	void AddSeg(bool dg_type_header, int seg_number, bool last_seg, const uint8_t* data, size_t len);
 	bool IsToBeShown();
+	bool IsShown() const {return shown;}
 	MOT_FILE GetFile() {return result_file;}
 
 	size_t GetCurrentBodySize() {return body.GetSize();}

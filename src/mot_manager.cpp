@@ -298,8 +298,12 @@ void MOTManager::HandleMOTDataGroup(const std::vector<uint8_t>& dg) {
 		return;
 
 
-	// add completed segment to MOT object (reset if necessary)
-	if(current_transport_id != transport_id) {
+	// add completed segment to MOT object (reset if necessary) - a new object, or the object
+	// already shown being sent again (same TransportId: its header starting over), e.g. a slide
+	// repeated in a loop: every reception is reported, each with its own reception times, as a
+	// diagnostic tool shows what is actually broadcast (a consumer receiver would show it once)
+	bool repeated = current_transport_id == transport_id && object.IsShown() && dg_type == 3 && seg_number == 0;
+	if(current_transport_id != transport_id || repeated) {
 		current_transport_id = transport_id;
 		object = MOTObject();
 		object_start = std::chrono::system_clock::now();
