@@ -60,8 +60,9 @@ EDIScopeQtLinksWindow::EDIScopeQtLinksWindow(QWidget *parent) :
 	services_list->setSelectionMode(QAbstractItemView::SingleSelection);
 	services_list->setSelectionBehavior(QAbstractItemView::SelectRows);
 	services_list->setFocusPolicy(Qt::StrongFocus);
-	services_list->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-	services_list->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+	// both columns can be resized by hand (a horizontal scroll bar appears if needed); "Service" is
+	// widened to its content when longer labels arrive - see SetServices
+	services_list->setProperty("fitted_width", 0);
 	connect(services_list, &QTableWidget::itemSelectionChanged, this, &EDIScopeQtLinksWindow::ShowDetailForSelection);
 	splitter->addWidget(services_list);
 
@@ -551,10 +552,22 @@ void EDIScopeQtLinksWindow::SetServices(const std::vector<SERVICE_ENTRY>& new_se
 	int restore_row = -1;
 	for(size_t i = 0; i < services.size(); i++) {
 		SetCell(services_list, (int) i, 0, services[i].label);
+		services_list->item((int) i, 0)->setToolTip(QString::fromStdString(services[i].label));
 		if(services[i].sid == prev_sid && services[i].scids == prev_scids)
 			restore_row = (int) i;
 	}
 	RefreshStatuses();
+
+	// fit "Service" to its content only when that grows (e.g. a "not on this ensemble" entry
+	// added), so a width chosen by hand is kept otherwise
+	int content_width = services_list->horizontalHeader()->sectionSizeHint(0);
+	QFontMetrics metrics(services_list->font());
+	for(int row = 0; row < services_list->rowCount(); row++)
+		content_width = std::max(content_width, metrics.horizontalAdvance(services_list->item(row, 0)->text()) + 16);
+	if(content_width > services_list->property("fitted_width").toInt()) {
+		services_list->setProperty("fitted_width", content_width);
+		services_list->setColumnWidth(0, std::max(content_width, services_list->columnWidth(0)));
+	}
 
 	main_stack->setCurrentIndex(services.empty() ? 0 : 1);
 
@@ -597,6 +610,7 @@ void EDIScopeQtLinksWindow::UpdateOEService(int64_t key, const FIC_OE_SERVICE& s
 void EDIScopeQtLinksWindow::Clear() {
 	services.clear();
 	services_list->setRowCount(0);
+	services_list->setProperty("fitted_width", 0);
 	linking_sets.clear();
 	freq_infos.clear();
 	oe_services.clear();
